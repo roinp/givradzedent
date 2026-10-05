@@ -1,0 +1,94 @@
+"use client";
+
+import { useState } from "react";
+import { supabase } from "@/lib/supabase";
+import type { Patient } from "@/lib/types";
+import Modal from "./Modal";
+import ErrorText from "./ErrorText";
+
+export default function PatientForm({
+  patient,
+  onClose,
+  onSaved,
+}: {
+  patient?: Patient | null;
+  onClose: () => void;
+  onSaved: (p: Patient) => void;
+}) {
+  const [form, setForm] = useState({
+    first_name: patient?.first_name ?? "",
+    last_name: patient?.last_name ?? "",
+    phone: patient?.phone ?? "",
+    date_of_birth: patient?.date_of_birth ?? "",
+    notes: patient?.notes ?? "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm({ ...form, [k]: e.target.value });
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const payload = {
+      first_name: form.first_name.trim(),
+      last_name: form.last_name.trim(),
+      phone: form.phone.trim() || null,
+      date_of_birth: form.date_of_birth || null,
+      notes: form.notes.trim() || null,
+    };
+    const query = patient
+      ? supabase.from("patients").update(payload).eq("id", patient.id)
+      : supabase.from("patients").insert(payload);
+    const { data, error } = await query.select().single();
+    setBusy(false);
+    if (error) return setError(error.message);
+    onSaved(data as Patient);
+  }
+
+  return (
+    <Modal title={patient ? "პაციენტის რედაქტირება" : "ახალი პაციენტი"} onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label">სახელი *</label>
+            <input required className="input" value={form.first_name} onChange={set("first_name")} />
+          </div>
+          <div>
+            <label className="label">გვარი *</label>
+            <input required className="input" value={form.last_name} onChange={set("last_name")} />
+          </div>
+          <div>
+            <label className="label">ტელეფონი</label>
+            <input type="tel" className="input" value={form.phone} onChange={set("phone")} placeholder="5XX XX XX XX" />
+          </div>
+          <div>
+            <label className="label">დაბადების თარიღი</label>
+            <input type="date" className="input" value={form.date_of_birth} onChange={set("date_of_birth")} />
+          </div>
+        </div>
+        <div>
+          <label className="label">შენიშვნები</label>
+          <textarea
+            rows={3}
+            className="input"
+            value={form.notes}
+            onChange={set("notes")}
+            placeholder="ალერგიები, ქრონიკული დაავადებები..."
+          />
+        </div>
+        <ErrorText error={error} />
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            გაუქმება
+          </button>
+          <button className="btn-primary" disabled={busy}>
+            {busy ? "ინახება..." : "შენახვა"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
