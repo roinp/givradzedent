@@ -4,6 +4,12 @@ const MONTHS = [
 ];
 export const WEEKDAYS_SHORT = ["ორშ", "სამ", "ოთხ", "ხუთ", "პარ", "შაბ", "კვი"];
 
+/** Bookable times in 30-minute steps, 24h format: 10:00 … 20:00. */
+export const TIME_SLOTS = Array.from({ length: 21 }, (_, i) => {
+  const minutes = 10 * 60 + i * 30;
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+});
+
 export function monthName(m: number) {
   return MONTHS[m];
 }

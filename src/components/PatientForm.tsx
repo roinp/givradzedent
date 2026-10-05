@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useDraft } from "@/lib/useDraft";
 import type { Patient } from "@/lib/types";
 import Modal from "./Modal";
 import ErrorText from "./ErrorText";
+import DraftNotice from "./DraftNotice";
 
 export default function PatientForm({
   patient,
@@ -15,13 +17,14 @@ export default function PatientForm({
   onClose: () => void;
   onSaved: (p: Patient) => void;
 }) {
-  const [form, setForm] = useState({
+  const draft = useDraft(`patient:${patient?.id ?? "new"}`, {
     first_name: patient?.first_name ?? "",
     last_name: patient?.last_name ?? "",
     phone: patient?.phone ?? "",
     date_of_birth: patient?.date_of_birth ?? "",
     notes: patient?.notes ?? "",
   });
+  const { value: form, setValue: setForm } = draft;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,12 +48,14 @@ export default function PatientForm({
     const { data, error } = await query.select().single();
     setBusy(false);
     if (error) return setError(error.message);
+    draft.clear();
     onSaved(data as Patient);
   }
 
   return (
     <Modal title={patient ? "პაციენტის რედაქტირება" : "ახალი პაციენტი"} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
+        <DraftNotice restored={draft.restored} onReset={draft.reset} />
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="label">სახელი *</label>
@@ -81,7 +86,7 @@ export default function PatientForm({
         </div>
         <ErrorText error={error} />
         <div className="flex justify-end gap-2">
-          <button type="button" className="btn-secondary" onClick={onClose}>
+          <button type="button" className="btn-secondary" onClick={() => { draft.clear(); onClose(); }}>
             გაუქმება
           </button>
           <button className="btn-primary" disabled={busy}>

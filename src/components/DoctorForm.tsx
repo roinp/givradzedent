@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useDraft } from "@/lib/useDraft";
 import type { Doctor } from "@/lib/types";
 import Modal from "./Modal";
 import ErrorText from "./ErrorText";
+import DraftNotice from "./DraftNotice";
 
 export default function DoctorForm({
   doctor,
@@ -15,11 +17,12 @@ export default function DoctorForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [form, setForm] = useState({
+  const draft = useDraft(`doctor:${doctor?.id ?? "new"}`, {
     name: doctor?.name ?? "",
     phone: doctor?.phone ?? "",
     specialty: doctor?.specialty ?? "",
   });
+  const { value: form, setValue: setForm } = draft;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,12 +43,14 @@ export default function DoctorForm({
       : await supabase.from("doctors").insert(payload);
     setBusy(false);
     if (error) return setError(error.message);
+    draft.clear();
     onSaved();
   }
 
   return (
     <Modal title={doctor ? "ექიმის რედაქტირება" : "ახალი ექიმი"} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
+        <DraftNotice restored={draft.restored} onReset={draft.reset} />
         <div>
           <label className="label">სახელი, გვარი *</label>
           <input required className="input" value={form.name} onChange={set("name")} />
@@ -65,7 +70,7 @@ export default function DoctorForm({
         </div>
         <ErrorText error={error} />
         <div className="flex justify-end gap-2">
-          <button type="button" className="btn-secondary" onClick={onClose}>
+          <button type="button" className="btn-secondary" onClick={() => { draft.clear(); onClose(); }}>
             გაუქმება
           </button>
           <button className="btn-primary" disabled={busy}>

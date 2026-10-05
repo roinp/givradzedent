@@ -4,9 +4,11 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { todayISO } from "@/lib/format";
 import { useDoctors } from "@/lib/useDoctors";
+import { useDraft } from "@/lib/useDraft";
 import type { Treatment } from "@/lib/types";
 import Modal from "./Modal";
 import ErrorText from "./ErrorText";
+import DraftNotice from "./DraftNotice";
 
 export default function TreatmentForm({
   patientId,
@@ -20,7 +22,7 @@ export default function TreatmentForm({
   onSaved: () => void;
 }) {
   const doctors = useDoctors();
-  const [form, setForm] = useState({
+  const draft = useDraft(treatment ? `treatment:${treatment.id}` : `treatment:new:${patientId}`, {
     date: treatment?.date ?? todayISO(),
     doctor_id: treatment?.doctor_id ?? "",
     procedure: treatment?.procedure ?? "",
@@ -28,6 +30,7 @@ export default function TreatmentForm({
     notes: treatment?.notes ?? "",
     price: treatment ? String(treatment.price) : "",
   });
+  const { value: form, setValue: setForm } = draft;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,12 +57,14 @@ export default function TreatmentForm({
       : await supabase.from("treatments").insert(payload);
     setBusy(false);
     if (error) return setError(error.message);
+    draft.clear();
     onSaved();
   }
 
   return (
     <Modal title={treatment ? "მკურნალობის რედაქტირება" : "მკურნალობის დამატება"} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
+        <DraftNotice restored={draft.restored} onReset={draft.reset} />
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="label">თარიღი *</label>
@@ -109,7 +114,7 @@ export default function TreatmentForm({
         </div>
         <ErrorText error={error} />
         <div className="flex justify-end gap-2">
-          <button type="button" className="btn-secondary" onClick={onClose}>
+          <button type="button" className="btn-secondary" onClick={() => { draft.clear(); onClose(); }}>
             გაუქმება
           </button>
           <button className="btn-primary" disabled={busy}>
