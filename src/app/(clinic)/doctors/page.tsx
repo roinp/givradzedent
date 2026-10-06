@@ -5,10 +5,12 @@ import { supabase } from "@/lib/supabase";
 import type { Doctor } from "@/lib/types";
 import DoctorForm from "@/components/DoctorForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import Pagination, { paginate } from "@/components/Pagination";
 
 export default function DoctorsPage() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<Doctor | null | "new">(null);
   const [deleting, setDeleting] = useState<Doctor | null>(null);
 
@@ -22,6 +24,8 @@ export default function DoctorsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
+
+  const { pageItems, pageCount, currentPage } = paginate(doctors, page);
 
   return (
     <div className="space-y-6">
@@ -38,7 +42,7 @@ export default function DoctorsPage() {
         <div className="card p-8 text-center text-slate-400">ექიმები ჯერ არ არის დამატებული</div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {doctors.map((d) => (
+          {pageItems.map((d) => (
             <div key={d.id} className="card p-5">
               <div className="flex items-start gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-100 font-semibold text-sky-700">
@@ -62,6 +66,8 @@ export default function DoctorsPage() {
           ))}
         </div>
       )}
+
+      <Pagination page={currentPage} pageCount={pageCount} onChange={setPage} />
 
       {editing && (
         <DoctorForm

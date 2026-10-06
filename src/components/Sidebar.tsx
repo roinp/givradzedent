@@ -8,6 +8,7 @@ const NAV = [
   { href: "/patients", label: "პაციენტები", icon: "☺" },
   { href: "/calendar", label: "კალენდარი", icon: "▤" },
   { href: "/doctors", label: "ექიმები", icon: "✚" },
+  { href: "/expenses", label: "ხარჯები", icon: "₾" },
 ];
 
 export default function Sidebar({

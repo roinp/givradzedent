@@ -4,13 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { age, formatDate, formatPrice, formatTime, todayISO } from "@/lib/format";
+import { age, formatDate, formatDateShort, formatPrice, formatTime, todayISO } from "@/lib/format";
 import type { Appointment, Patient, Treatment } from "@/lib/types";
 import PatientForm from "@/components/PatientForm";
 import TreatmentForm from "@/components/TreatmentForm";
 import AppointmentForm from "@/components/AppointmentForm";
 import AppointmentDetails from "@/components/AppointmentDetails";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import Pagination, { paginate } from "@/components/Pagination";
 
 export default function PatientProfilePage() {
   const { id } = useParams<{ id: string }>();
@@ -26,6 +27,7 @@ export default function PatientProfilePage() {
   const [deletingTreatment, setDeletingTreatment] = useState<Treatment | null>(null);
   const [booking, setBooking] = useState(false);
   const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null);
+  const [treatmentPage, setTreatmentPage] = useState(1);
 
   const load = useCallback(async () => {
     const [p, t, a] = await Promise.all([
@@ -70,6 +72,11 @@ export default function PatientProfilePage() {
   const total = treatments.reduce((s, t) => s + Number(t.price), 0);
   const paid = treatments.reduce((s, t) => s + Number(t.paid ?? 0), 0);
   const remaining = total - paid;
+  const {
+    pageItems: pageTreatments,
+    pageCount: treatmentPages,
+    currentPage: currentTreatmentPage,
+  } = paginate(treatments, treatmentPage);
   const years = age(patient.date_of_birth);
 
   return (
@@ -124,7 +131,7 @@ export default function PatientProfilePage() {
       {appointments.length > 0 && (
         <section className="card">
           <h2 className="border-b border-slate-100 px-5 py-4 font-semibold">მომავალი ვიზიტები</h2>
-          <div className="divide-y divide-slate-100">
+          <div className="max-h-80 divide-y divide-slate-100 overflow-y-auto">
             {appointments.map((a) => (
               <button
                 key={a.id}
@@ -163,73 +170,76 @@ export default function PatientProfilePage() {
           <p className="px-5 py-8 text-center text-sm text-slate-400">მკურნალობის ჩანაწერები არ არის</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-sm">
+            <table className="w-full min-w-[640px] text-sm lg:min-w-0">
               <thead className="bg-slate-50 text-left text-slate-500">
                 <tr>
-                  <th className="px-5 py-3 font-medium">თარიღი</th>
-                  <th className="px-5 py-3 font-medium">ექიმი</th>
-                  <th className="px-5 py-3 font-medium">მკურნალობა</th>
-                  <th className="px-5 py-3 font-medium">კბილი</th>
-                  <th className="px-5 py-3 font-medium">შენიშვნა</th>
-                  <th className="px-5 py-3 text-right font-medium">სულ გადასახდელი</th>
-                  <th className="px-5 py-3 text-right font-medium">გადახდილი</th>
-                  <th className="px-5 py-3 text-right font-medium">დარჩენილი</th>
-                  <th className="px-5 py-3" />
+                  <th className="px-3 py-3 font-medium">თარიღი</th>
+                  <th className="px-3 py-3 font-medium">მკურნალობა</th>
+                  <th className="px-3 py-3 font-medium">შენიშვნა</th>
+                  <th className="px-3 py-3 text-right font-medium">სულ</th>
+                  <th className="px-3 py-3 text-right font-medium">გადახდილი</th>
+                  <th className="px-3 py-3 text-right font-medium">დარჩენილი</th>
+                  <th className="px-2 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {treatments.map((t) => (
-                  <tr key={t.id} className="align-top hover:bg-slate-50">
-                    <td className="whitespace-nowrap px-5 py-3">{formatDate(t.date)}</td>
-                    <td className="px-5 py-3 text-slate-600">{t.doctors?.name ?? "—"}</td>
-                    <td className="min-w-32 max-w-56 px-5 py-3 font-medium [overflow-wrap:anywhere]">{t.procedure}</td>
-                    <td className="px-5 py-3">
-                      {t.tooth_number ? (
-                        <span className="rounded bg-slate-100 px-2 py-0.5">{t.tooth_number}</span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="w-64 min-w-48 max-w-xs whitespace-pre-wrap px-5 py-3 text-slate-600 [overflow-wrap:anywhere]">
-                      {t.notes ?? "—"}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-right font-medium">{formatPrice(t.price)}</td>
-                    <td className="whitespace-nowrap px-5 py-3 text-right text-emerald-700">{formatPrice(t.paid)}</td>
-                    <td
-                      className={`whitespace-nowrap px-5 py-3 text-right font-semibold ${
-                        Number(t.price) - Number(t.paid ?? 0) > 0 ? "text-red-600" : "text-slate-400"
-                      }`}
-                    >
-                      {formatPrice(Number(t.price) - Number(t.paid ?? 0))}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-right">
-                      <button
-                        className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                        onClick={() => setTreatmentForm(t)}
-                        title="რედაქტირება"
+                {pageTreatments.map((t) => {
+                  const left = Number(t.price) - Number(t.paid ?? 0);
+                  return (
+                    <tr key={t.id} className="align-top hover:bg-slate-50">
+                      <td className="whitespace-nowrap px-3 py-3 tabular-nums">{formatDateShort(t.date)}</td>
+                      <td className="px-3 py-3 [overflow-wrap:anywhere]">
+                        <p className="font-medium">
+                          {t.procedure}
+                          {t.tooth_number && (
+                            <span className="ml-1.5 whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 text-xs font-normal text-slate-600">
+                              🦷 {t.tooth_number}
+                            </span>
+                          )}
+                        </p>
+                        {t.doctors && <p className="mt-0.5 text-xs text-slate-500">{t.doctors.name}</p>}
+                      </td>
+                      <td className="whitespace-pre-wrap px-3 py-3 text-slate-600 [overflow-wrap:anywhere]">
+                        {t.notes ?? "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right font-medium">{formatPrice(t.price)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right text-emerald-700">{formatPrice(t.paid)}</td>
+                      <td
+                        className={`whitespace-nowrap px-3 py-3 text-right font-semibold ${
+                          left > 0 ? "text-red-600" : "text-slate-400"
+                        }`}
                       >
-                        ✎
-                      </button>
-                      <button
-                        className="rounded px-2 py-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
-                        onClick={() => setDeletingTreatment(t)}
-                        title="წაშლა"
-                      >
-                        🗑
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                        {formatPrice(left)}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2 text-right">
+                        <button
+                          className="rounded px-1.5 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                          onClick={() => setTreatmentForm(t)}
+                          title="რედაქტირება"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          className="rounded px-1.5 py-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                          onClick={() => setDeletingTreatment(t)}
+                          title="წაშლა"
+                        >
+                          🗑
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
                 <tr>
-                  <td className="px-5 py-3" colSpan={5}>
+                  <td className="px-3 py-3" colSpan={3}>
                     ჯამი
                   </td>
-                  <td className="whitespace-nowrap px-5 py-3 text-right">{formatPrice(total)}</td>
-                  <td className="whitespace-nowrap px-5 py-3 text-right text-emerald-700">{formatPrice(paid)}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right">{formatPrice(total)}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right text-emerald-700">{formatPrice(paid)}</td>
                   <td
-                    className={`whitespace-nowrap px-5 py-3 text-right ${
+                    className={`whitespace-nowrap px-3 py-3 text-right ${
                       remaining > 0 ? "text-red-600" : "text-slate-400"
                     }`}
                   >
@@ -239,6 +249,11 @@ export default function PatientProfilePage() {
                 </tr>
               </tfoot>
             </table>
+          </div>
+        )}
+        {treatmentPages > 1 && (
+          <div className="border-t border-slate-100 p-3">
+            <Pagination page={currentTreatmentPage} pageCount={treatmentPages} onChange={setTreatmentPage} />
           </div>
         )}
       </section>

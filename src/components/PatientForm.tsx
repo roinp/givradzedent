@@ -10,17 +10,20 @@ import DraftNotice from "./DraftNotice";
 
 export default function PatientForm({
   patient,
+  prefill,
   onClose,
   onSaved,
 }: {
   patient?: Patient | null;
+  /** Values to start a new patient with, e.g. what was typed in a search box. */
+  prefill?: { first_name?: string; last_name?: string; phone?: string };
   onClose: () => void;
   onSaved: (p: Patient) => void;
 }) {
-  const draft = useDraft(`patient:${patient?.id ?? "new"}`, {
-    first_name: patient?.first_name ?? "",
-    last_name: patient?.last_name ?? "",
-    phone: patient?.phone ?? "",
+  const draft = useDraft(`patient:${patient?.id ?? (prefill ? "new:prefill" : "new")}`, {
+    first_name: patient?.first_name ?? prefill?.first_name ?? "",
+    last_name: patient?.last_name ?? prefill?.last_name ?? "",
+    phone: patient?.phone ?? prefill?.phone ?? "",
     date_of_birth: patient?.date_of_birth ?? "",
     notes: patient?.notes ?? "",
   });

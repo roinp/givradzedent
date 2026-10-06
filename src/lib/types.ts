@@ -39,3 +39,15 @@ export type Treatment = {
   paid: number;
   doctors?: Pick<Doctor, "id" | "name"> | null;
 };
+
+export type Expense = {
+  id: string;
+  date: string;
+  item: string;
+  category: string | null;
+  unit_price: number;
+  quantity: number;
+  supplier: string | null;
+  paid: number;
+  notes: string | null;
+};

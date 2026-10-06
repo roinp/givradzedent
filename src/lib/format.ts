@@ -32,6 +32,13 @@ export function formatDate(iso: string | null) {
   return `${d} ${MONTHS[m - 1]}, ${y}`;
 }
 
+/** Compact date for tables: 15.09.2026 */
+export function formatDateShort(iso: string | null) {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  return `${d}.${m}.${y}`;
+}
+
 export function formatTime(t: string | null) {
   return t ? t.slice(0, 5) : "—";
 }

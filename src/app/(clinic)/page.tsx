@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const [today, setToday] = useState<Appointment[]>([]);
   const [upcoming, setUpcoming] = useState<Appointment[]>([]);
   const [patientCount, setPatientCount] = useState<number | null>(null);
+  const [upcomingCount, setUpcomingCount] = useState(0);
   const [selected, setSelected] = useState<Appointment | null>(null);
   const [booking, setBooking] = useState(false);
   const [addingPatient, setAddingPatient] = useState(false);
@@ -25,15 +26,16 @@ export default function DashboardPage() {
       supabase.from("appointments").select(APPT_SELECT).eq("date", t).order("time"),
       supabase
         .from("appointments")
-        .select(APPT_SELECT)
+        .select(APPT_SELECT, { count: "exact" })
         .gt("date", t)
         .order("date")
         .order("time")
-        .limit(10),
+        .limit(100),
       supabase.from("patients").select("id", { count: "exact", head: true }),
     ]);
     setToday(todayRes.data ?? []);
     setUpcoming(upcomingRes.data ?? []);
+    setUpcomingCount(upcomingRes.count ?? 0);
     setPatientCount(countRes.count ?? 0);
   }, []);
 
@@ -62,11 +64,11 @@ export default function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat label="დღევანდელი ვიზიტები" value={today.length} color="bg-teal-50 text-teal-700" />
         <Stat label="სულ პაციენტები" value={patientCount ?? "…"} color="bg-sky-50 text-sky-700" />
-        <Stat label="მომავალი ვიზიტები" value={upcoming.length} color="bg-amber-50 text-amber-700" />
+        <Stat label="მომავალი ვიზიტები" value={upcomingCount} color="bg-amber-50 text-amber-700" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Section title="დღევანდელი ვიზიტები">
+        <Section title="დღევანდელი ვიზიტები" scroll>
           {today.length === 0 ? (
             <Empty text="დღეს ვიზიტები არ არის" />
           ) : (
@@ -78,6 +80,7 @@ export default function DashboardPage() {
 
         <Section
           title="მომავალი ვიზიტები"
+          scroll
           action={
             <Link href="/calendar" className="text-sm text-teal-700 hover:underline">
               კალენდარი →
@@ -131,10 +134,13 @@ function Stat({ label, value, color }: { label: string; value: number | string; 
 function Section({
   title,
   action,
+  scroll = false,
   children,
 }: {
   title: string;
   action?: React.ReactNode;
+  /** Show about 7 rows, scroll the rest. */
+  scroll?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -143,7 +149,7 @@ function Section({
         <h2 className="font-semibold">{title}</h2>
         {action}
       </div>
-      <div className="divide-y divide-slate-100">{children}</div>
+      <div className={`divide-y divide-slate-100 ${scroll ? "max-h-[483px] overflow-y-auto" : ""}`}>{children}</div>
     </section>
   );
 }

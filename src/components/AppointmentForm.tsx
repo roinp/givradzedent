@@ -10,24 +10,28 @@ import Modal from "./Modal";
 import ErrorText from "./ErrorText";
 import DraftNotice from "./DraftNotice";
 import TimeSlotPicker from "./TimeSlotPicker";
+import PatientForm from "./PatientForm";
 
 type PatientOption = Pick<Patient, "id" | "first_name" | "last_name" | "phone">;
 
 export default function AppointmentForm({
   appointment,
   defaultDate,
+  defaultTime,
   defaultPatientId,
   onClose,
   onSaved,
 }: {
   appointment?: Appointment | null;
   defaultDate?: string;
+  defaultTime?: string;
   defaultPatientId?: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const doctors = useDoctors();
   const [patients, setPatients] = useState<PatientOption[]>([]);
+  const [patientsLoaded, setPatientsLoaded] = useState(false);
   const [filter, setFilter] = useState("");
   const draft = useDraft(
     appointment ? `appointment:${appointment.id}` : `appointment:new:${defaultPatientId ?? ""}`,
@@ -35,7 +39,7 @@ export default function AppointmentForm({
       patient_id: appointment?.patient_id ?? defaultPatientId ?? "",
       doctor_id: appointment?.doctor_id ?? "",
       date: appointment?.date ?? defaultDate ?? todayISO(),
-      time: appointment?.time?.slice(0, 5) ?? "10:00",
+      time: appointment?.time?.slice(0, 5) ?? defaultTime ?? "10:00",
       reason: appointment?.reason ?? "",
       notes: appointment?.notes ?? "",
     },
@@ -50,7 +54,10 @@ export default function AppointmentForm({
       .from("patients")
       .select("id, first_name, last_name, phone")
       .order("last_name")
-      .then(({ data }) => setPatients(data ?? []));
+      .then(({ data }) => {
+        setPatients(data ?? []);
+        setPatientsLoaded(true);
+      });
   }, []);
 
   // Other appointments on the chosen day, used to mark taken time slots.
@@ -77,19 +84,62 @@ export default function AppointmentForm({
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
       setForm({ ...form, [k]: e.target.value });
 
-  const q = filter.trim().toLowerCase();
-  const visiblePatients = q
-    ? patients.filter(
-        (p) =>
-          p.id === form.patient_id ||
-          fullName(p).toLowerCase().includes(q) ||
-          (p.phone ?? "").includes(q),
-      )
-    : patients;
+  function matchPatients(text: string) {
+    const q = text.trim().toLowerCase();
+    if (!q) return patients;
+    const digits = q.replace(/\s/g, "");
+    return patients.filter(
+      (p) =>
+        fullName(p).toLowerCase().includes(q) ||
+        `${p.last_name} ${p.first_name}`.toLowerCase().includes(q) ||
+        (p.phone ?? "").replace(/\s/g, "").includes(digits),
+    );
+  }
+
+  const matches = matchPatients(filter);
+  const selectedPatient = patients.find((p) => p.id === form.patient_id);
+  // Keep the chosen patient in the list even if it no longer matches the search.
+  const visiblePatients =
+    selectedPatient && !matches.includes(selectedPatient) ? [selectedPatient, ...matches] : matches;
+
+  // Typing a name or phone automatically picks the first matching patient.
+  function handleFilterChange(text: string) {
+    setFilter(text);
+    if (!text.trim()) return;
+    setForm({ ...form, patient_id: matchPatients(text)[0]?.id ?? "" });
+  }
+
+  // When a search finds nobody, offer to add the patient once typing pauses.
+  const [notFoundQuery, setNotFoundQuery] = useState<string | null>(null);
+  const [dismissedQuery, setDismissedQuery] = useState("");
+  const [addingPatient, setAddingPatient] = useState(false);
+  const searchText = filter.trim();
+  const nothingFound = patientsLoaded && searchText.length >= 3 && matches.length === 0;
+
+  useEffect(() => {
+    if (!nothingFound || searchText === dismissedQuery) return;
+    const timer = setTimeout(() => setNotFoundQuery(searchText), 1000);
+    return () => clearTimeout(timer);
+  }, [nothingFound, searchText, dismissedQuery]);
+
+  function dismissNotFound() {
+    setDismissedQuery(notFoundQuery ?? "");
+    setNotFoundQuery(null);
+  }
+
+  /** Turn the search text into starting values for a new patient. */
+  function prefillFromSearch(text: string) {
+    if (/^[\d\s+()-]+$/.test(text)) return { phone: text };
+    const [first_name, ...rest] = text.split(/\s+/);
+    return { first_name, last_name: rest.join(" ") };
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.patient_id) return setError("აირჩიეთ პაციენტი");
+    if (!form.patient_id) {
+      if (searchText && matches.length === 0) return setNotFoundQuery(searchText);
+      return setError("აირჩიეთ პაციენტი");
+    }
     if (selectedTaken) return setError(`${form.time} დაკავებულია (${selectedTaken}). აირჩიეთ სხვა დრო.`);
     setBusy(true);
     setError(null);
@@ -117,16 +167,27 @@ export default function AppointmentForm({
         <div>
           <label className="label">პაციენტი *</label>
           {!defaultPatientId && (
-            <input
-              className="input mb-2"
-              placeholder="ძებნა სახელით ან ტელეფონით..."
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            />
+            <>
+              <input
+                className="input"
+                placeholder="🔍 ჩაწერეთ სახელი ან ტელეფონი..."
+                value={filter}
+                onChange={(e) => handleFilterChange(e.target.value)}
+              />
+              <p className="mb-2 mt-1 min-h-4 px-1 text-xs text-slate-500">
+                {filter.trim()
+                  ? matches.length === 0
+                    ? "პაციენტი ვერ მოიძებნა"
+                    : matches.length === 1
+                      ? "✓ მოიძებნა 1 პაციენტი"
+                      : `მოიძებნა ${matches.length}. არჩეულია პირველი, საჭიროების შემთხვევაში შეცვალეთ ქვემოთ`
+                  : ""}
+              </p>
+            </>
           )}
           <select
             required
-            className="input"
+            className={`input ${form.patient_id ? "border-emerald-400 bg-emerald-50 font-medium" : ""}`}
             value={form.patient_id}
             onChange={set("patient_id")}
             disabled={Boolean(defaultPatientId)}
@@ -210,6 +271,45 @@ export default function AppointmentForm({
           </button>
         </div>
       </form>
+
+      {notFoundQuery && !addingPatient && (
+        <Modal title="პაციენტი ვერ მოიძებნა" onClose={dismissNotFound}>
+          <div className="text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-2xl">
+              🔍
+            </div>
+            <p className="mt-4 text-slate-700">
+              „<b>{notFoundQuery}</b>“ პაციენტების სიაში არ არის.
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              ვიზიტის დასაჯავშნად საჭიროა, პაციენტი ჯერ დაემატოს სიაში.
+            </p>
+          </div>
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" className="btn-secondary" onClick={dismissNotFound}>
+              დახურვა
+            </button>
+            <button type="button" className="btn-primary" onClick={() => setAddingPatient(true)}>
+              + პაციენტის დამატება
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {addingPatient && notFoundQuery && (
+        <PatientForm
+          prefill={prefillFromSearch(notFoundQuery)}
+          onClose={() => setAddingPatient(false)}
+          onSaved={(p) => {
+            setPatients((list) => [...list, p]);
+            setForm({ ...form, patient_id: p.id });
+            setFilter(fullName(p));
+            setAddingPatient(false);
+            setNotFoundQuery(null);
+            setError(null);
+          }}
+        />
+      )}
     </Modal>
   );
 }

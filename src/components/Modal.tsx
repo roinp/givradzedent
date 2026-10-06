@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export default function Modal({
   title,
@@ -13,14 +13,23 @@ export default function Modal({
   children: React.ReactNode;
   wide?: boolean;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // With stacked modals, Escape closes only the topmost one.
+      const open = document.querySelectorAll("[data-modal]");
+      if (open[open.length - 1] === ref.current) onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
   return (
     <div
+      ref={ref}
+      data-modal
       className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >

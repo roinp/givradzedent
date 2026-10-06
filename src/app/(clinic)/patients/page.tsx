@@ -3,16 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatTime, todayISO } from "@/lib/format";
 import type { Patient } from "@/lib/types";
 import PatientForm from "@/components/PatientForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import Pagination from "@/components/Pagination";
+import Pagination, { paginate } from "@/components/Pagination";
 
-const PAGE_SIZE = 20;
+type PatientRow = Patient & { appointments: { date: string; time: string }[] };
 
 export default function PatientsPage() {
-  const [patients, setPatients] = useState<Patient[]>([]);
+  const [patients, setPatients] = useState<PatientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Patient | null | "new">(null);
@@ -27,7 +27,16 @@ export default function PatientsPage() {
   });
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from("patients").select("*").order("last_name").order("first_name");
+    // Each patient with only their most recent past appointment (last visit).
+    const { data } = await supabase
+      .from("patients")
+      .select("*, appointments(date, time)")
+      .lte("appointments.date", todayISO())
+      .order("date", { referencedTable: "appointments", ascending: false })
+      .order("time", { referencedTable: "appointments", ascending: false })
+      .limit(1, { referencedTable: "appointments" })
+      .order("last_name")
+      .order("first_name");
     setPatients(data ?? []);
     setLoading(false);
   }, []);
@@ -47,10 +56,40 @@ export default function PatientsPage() {
       )
     : patients;
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pageCount);
-  const firstIndex = (currentPage - 1) * PAGE_SIZE;
-  const pageItems = filtered.slice(firstIndex, firstIndex + PAGE_SIZE);
+  const { pageItems, pageCount, currentPage, firstIndex } = paginate(filtered, page);
+
+  // Row selection for bulk delete (kept across pages and searches).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const allPageSelected = pageItems.length > 0 && pageItems.every((p) => selected.has(p.id));
+  const somePageSelected = pageItems.some((p) => selected.has(p.id));
+
+  function toggleOne(id: string) {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  }
+
+  function togglePage() {
+    const next = new Set(selected);
+    for (const p of pageItems) {
+      if (allPageSelected) next.delete(p.id);
+      else next.add(p.id);
+    }
+    setSelected(next);
+  }
+
+  async function deleteSelected() {
+    const ids = [...selected];
+    // Chunked so the request URL stays short with many patients.
+    for (let i = 0; i < ids.length; i += 100) {
+      await supabase.from("patients").delete().in("id", ids.slice(i, i + 100));
+    }
+    setSelected(new Set());
+    setBulkDeleting(false);
+    load();
+  }
 
   function goToPage(p: number) {
     setPage(p);
@@ -78,6 +117,26 @@ export default function PatientsPage() {
         }}
       />
 
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm">
+          <span className="font-medium text-teal-800">მონიშნულია: {selected.size}</span>
+          {selected.size < filtered.length && (
+            <button
+              className="text-teal-700 underline hover:no-underline"
+              onClick={() => setSelected(new Set(filtered.map((p) => p.id)))}
+            >
+              მონიშნე ყველა ({filtered.length})
+            </button>
+          )}
+          <button className="text-slate-600 underline hover:no-underline" onClick={() => setSelected(new Set())}>
+            მონიშვნის მოხსნა
+          </button>
+          <button className="btn-danger ml-auto py-1.5" onClick={() => setBulkDeleting(true)}>
+            🗑 წაშლა ({selected.size})
+          </button>
+        </div>
+      )}
+
       <div className="card overflow-hidden">
         {loading ? (
           <p className="p-8 text-center text-slate-400">იტვირთება...</p>
@@ -91,20 +150,41 @@ export default function PatientsPage() {
               <tr>
                 <th className="px-5 py-3 font-medium">სახელი, გვარი</th>
                 <th className="px-5 py-3 font-medium">ტელეფონი</th>
-                <th className="hidden px-5 py-3 font-medium md:table-cell">დაბადების თარიღი</th>
+                <th className="hidden px-5 py-3 font-medium md:table-cell">ბოლო ვიზიტი</th>
                 <th className="px-5 py-3" />
+                <th className="w-12 py-3 pl-2 pr-5 text-right">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 cursor-pointer accent-teal-600 align-middle"
+                    title="გვერდზე ყველას მონიშვნა"
+                    checked={allPageSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = somePageSelected && !allPageSelected;
+                    }}
+                    onChange={togglePage}
+                  />
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {pageItems.map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50">
+                <tr key={p.id} className={selected.has(p.id) ? "bg-teal-50/60" : "hover:bg-slate-50"}>
                   <td className="px-5 py-3">
                     <Link href={`/patients/${p.id}`} className="font-medium text-teal-700 hover:underline">
                       {p.first_name} {p.last_name}
                     </Link>
                   </td>
                   <td className="px-5 py-3 text-slate-600">{p.phone ?? "—"}</td>
-                  <td className="hidden px-5 py-3 text-slate-600 md:table-cell">{formatDate(p.date_of_birth)}</td>
+                  <td className="hidden whitespace-nowrap px-5 py-3 text-slate-600 md:table-cell">
+                    {p.appointments[0] ? (
+                      <>
+                        {formatDate(p.appointments[0].date)}
+                        <span className="ml-2 text-slate-400">{formatTime(p.appointments[0].time)}</span>
+                      </>
+                    ) : (
+                      <span className="text-slate-400">ვიზიტი არ ყოფილა</span>
+                    )}
+                  </td>
                   <td className="whitespace-nowrap px-5 py-3 text-right">
                     <button
                       className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
@@ -120,6 +200,15 @@ export default function PatientsPage() {
                     >
                       🗑
                     </button>
+                  </td>
+                  <td className="w-12 py-3 pl-2 pr-5 text-right">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 cursor-pointer accent-teal-600 align-middle"
+                      aria-label={`${p.first_name} ${p.last_name} — მონიშვნა`}
+                      checked={selected.has(p.id)}
+                      onChange={() => toggleOne(p.id)}
+                    />
                   </td>
                 </tr>
               ))}
@@ -159,9 +248,17 @@ export default function PatientsPage() {
           onClose={() => setDeleting(null)}
           onConfirm={async () => {
             await supabase.from("patients").delete().eq("id", deleting.id);
+            if (selected.has(deleting.id)) toggleOne(deleting.id);
             setDeleting(null);
             load();
           }}
+        />
+      )}
+      {bulkDeleting && (
+        <ConfirmDialog
+          message={`წაიშალოს ${selected.size} პაციენტი? წაიშლება მათი ვიზიტები და მკურნალობის ისტორიაც. ამ მოქმედების დაბრუნება შეუძლებელია.`}
+          onClose={() => setBulkDeleting(false)}
+          onConfirm={deleteSelected}
         />
       )}
     </div>

@@ -6,6 +6,7 @@ import { WEEKDAYS_SHORT, formatDate, formatTime, fullName, monthName, toISODate,
 import type { Appointment } from "@/lib/types";
 import AppointmentForm from "@/components/AppointmentForm";
 import AppointmentDetails from "@/components/AppointmentDetails";
+import DaySchedule from "@/components/DaySchedule";
 
 /** 6x7 grid of dates for the month, weeks starting on Monday. */
 function monthGrid(year: number, month: number) {
@@ -23,6 +24,8 @@ export default function CalendarPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [selected, setSelected] = useState<Appointment | null>(null);
   const [booking, setBooking] = useState(false);
+  const [bookingTime, setBookingTime] = useState<string | undefined>();
+  const [dayOpen, setDayOpen] = useState(false);
 
   const days = monthGrid(year, month);
 
@@ -95,8 +98,13 @@ export default function CalendarPage() {
           </div>
 
           <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 text-sm">
-            {WEEKDAYS_SHORT.map((w) => (
-              <div key={w} className="bg-slate-50 py-2 text-center text-xs font-medium text-slate-500">
+            {WEEKDAYS_SHORT.map((w, i) => (
+              <div
+                key={w}
+                className={`py-2 text-center text-xs font-medium ${
+                  i >= 5 ? "bg-red-50 text-red-600" : "bg-slate-50 text-slate-500"
+                }`}
+              >
                 {w}
               </div>
             ))}
@@ -105,18 +113,26 @@ export default function CalendarPage() {
               const list = byDate.get(iso) ?? [];
               const inMonth = d.getMonth() === month;
               const isSelected = iso === selectedDate;
+              const isWeekend = d.getDay() === 0 || d.getDay() === 6;
               return (
                 <div
                   key={iso}
-                  onClick={() => setSelectedDate(iso)}
+                  onClick={() => {
+                    setSelectedDate(iso);
+                    setDayOpen(true);
+                  }}
                   className={`min-h-20 cursor-pointer p-1 sm:min-h-28 sm:p-1.5 ${
-                    isSelected ? "bg-teal-50 ring-2 ring-inset ring-teal-500" : "bg-white hover:bg-slate-50"
-                  } ${inMonth ? "" : "text-slate-300"}`}
+                    isSelected
+                      ? "bg-teal-50 ring-2 ring-inset ring-teal-500"
+                      : isWeekend
+                        ? "bg-red-50/60 hover:bg-red-50"
+                        : "bg-white hover:bg-slate-50"
+                  } ${inMonth ? (isWeekend ? "text-red-600" : "") : isWeekend ? "text-red-300" : "text-slate-300"}`}
                 >
                   <div className="flex items-center justify-between">
                     <span
                       className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${
-                        iso === today ? "bg-teal-600 font-semibold text-white" : ""
+                        iso === today ? "bg-teal-600 font-semibold text-white" : isWeekend ? "font-semibold" : ""
                       }`}
                     >
                       {d.getDate()}
@@ -162,7 +178,7 @@ export default function CalendarPage() {
           {dayAppointments.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-slate-400">ამ დღეს ვიზიტები არ არის</p>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <div className="max-h-[483px] divide-y divide-slate-100 overflow-y-auto">
               {dayAppointments.map((a) => (
                 <button
                   key={a.id}
@@ -184,15 +200,33 @@ export default function CalendarPage() {
         </section>
       </div>
 
+      {/* Rendered first so appointment details / booking open on top of it. */}
+      {dayOpen && (
+        <DaySchedule
+          date={selectedDate}
+          appointments={dayAppointments}
+          onClose={() => setDayOpen(false)}
+          onOpenAppointment={setSelected}
+          onBook={(time) => {
+            setBookingTime(time);
+            setBooking(true);
+          }}
+        />
+      )}
       {selected && (
         <AppointmentDetails appointment={selected} onClose={() => setSelected(null)} onChanged={load} />
       )}
       {booking && (
         <AppointmentForm
           defaultDate={selectedDate}
-          onClose={() => setBooking(false)}
+          defaultTime={bookingTime}
+          onClose={() => {
+            setBooking(false);
+            setBookingTime(undefined);
+          }}
           onSaved={() => {
             setBooking(false);
+            setBookingTime(undefined);
             load();
           }}
         />

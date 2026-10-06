@@ -1,5 +1,21 @@
 "use client";
 
+/** Rows per page for every paginated list in the app. */
+export const PAGE_SIZE = 15;
+
+/** Slice `items` for the given 1-based page, clamping the page to the valid range. */
+export function paginate<T>(items: T[], page: number) {
+  const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const currentPage = Math.min(Math.max(1, page), pageCount);
+  const firstIndex = (currentPage - 1) * PAGE_SIZE;
+  return {
+    pageItems: items.slice(firstIndex, firstIndex + PAGE_SIZE),
+    pageCount,
+    currentPage,
+    firstIndex,
+  };
+}
+
 /** Page numbers to show: first, last, and current ±1, with gaps marked as null. */
 function visiblePages(page: number, count: number): (number | null)[] {
   const pages: (number | null)[] = [];

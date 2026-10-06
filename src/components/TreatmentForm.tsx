@@ -102,7 +102,7 @@ export default function TreatmentForm({
         </div>
         <div className="grid grid-cols-3 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
           <div>
-            <label className="label text-xs">სულ გადასახდელი (₾)</label>
+            <label className="label text-xs">სულ გადასახდელი</label>
             <input
               type="number"
               min="0"
@@ -114,7 +114,7 @@ export default function TreatmentForm({
             />
           </div>
           <div>
-            <label className="label text-xs">გადახდილი (₾)</label>
+            <label className="label text-xs">გადახდილი </label>
             <input
               type="number"
               min="0"
@@ -126,7 +126,7 @@ export default function TreatmentForm({
             />
           </div>
           <div>
-            <label className="label text-xs">დარჩენილი (₾)</label>
+            <label className="label text-xs">დარჩენილი</label>
             <div
               className={`input font-semibold tabular-nums ${
                 remaining > 0 ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-700"
