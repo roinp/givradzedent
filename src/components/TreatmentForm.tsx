@@ -29,10 +29,12 @@ export default function TreatmentForm({
     tooth_number: treatment?.tooth_number ?? "",
     notes: treatment?.notes ?? "",
     price: treatment ? String(treatment.price) : "",
+    paid: treatment ? String(treatment.paid ?? 0) : "",
   });
   const { value: form, setValue: setForm } = draft;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const remaining = Math.round(((Number(form.price) || 0) - (Number(form.paid) || 0)) * 100) / 100;
 
   const set =
     (k: keyof typeof form) =>
@@ -41,6 +43,7 @@ export default function TreatmentForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (remaining < 0) return setError("გადახდილი თანხა აღემატება სულ გადასახდელს");
     setBusy(true);
     setError(null);
     const payload = {
@@ -51,6 +54,7 @@ export default function TreatmentForm({
       tooth_number: form.tooth_number.trim() || null,
       notes: form.notes.trim() || null,
       price: Number(form.price) || 0,
+      paid: Number(form.paid) || 0,
     };
     const { error } = treatment
       ? await supabase.from("treatments").update(payload).eq("id", treatment.id)
@@ -95,8 +99,10 @@ export default function TreatmentForm({
             <label className="label">კბილის ნომერი</label>
             <input className="input" value={form.tooth_number} onChange={set("tooth_number")} placeholder="მაგ. 36" />
           </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
           <div>
-            <label className="label">ფასი (₾)</label>
+            <label className="label text-xs">სულ გადასახდელი (₾)</label>
             <input
               type="number"
               min="0"
@@ -106,6 +112,28 @@ export default function TreatmentForm({
               onChange={set("price")}
               placeholder="0.00"
             />
+          </div>
+          <div>
+            <label className="label text-xs">გადახდილი (₾)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input"
+              value={form.paid}
+              onChange={set("paid")}
+              placeholder="0.00"
+            />
+          </div>
+          <div>
+            <label className="label text-xs">დარჩენილი (₾)</label>
+            <div
+              className={`input font-semibold tabular-nums ${
+                remaining > 0 ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-700"
+              }`}
+            >
+              {remaining.toFixed(2)}
+            </div>
           </div>
         </div>
         <div>

@@ -68,6 +68,8 @@ export default function PatientProfilePage() {
   if (!patient) return <p className="text-slate-400">იტვირთება...</p>;
 
   const total = treatments.reduce((s, t) => s + Number(t.price), 0);
+  const paid = treatments.reduce((s, t) => s + Number(t.paid ?? 0), 0);
+  const remaining = total - paid;
   const years = age(patient.date_of_birth);
 
   return (
@@ -146,7 +148,10 @@ export default function PatientProfilePage() {
           <div>
             <h2 className="font-semibold">მკურნალობის ისტორია</h2>
             <p className="text-xs text-slate-500">
-              {treatments.length} ჩანაწერი · ჯამი {formatPrice(total)}
+              {treatments.length} ჩანაწერი · სულ {formatPrice(total)} · გადახდილი {formatPrice(paid)} ·{" "}
+              <span className={remaining > 0 ? "font-semibold text-red-600" : "text-emerald-700"}>
+                დარჩენილი {formatPrice(remaining)}
+              </span>
             </p>
           </div>
           <button className="btn-primary" onClick={() => setTreatmentForm("new")}>
@@ -158,7 +163,7 @@ export default function PatientProfilePage() {
           <p className="px-5 py-8 text-center text-sm text-slate-400">მკურნალობის ჩანაწერები არ არის</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
+            <table className="w-full min-w-[860px] text-sm">
               <thead className="bg-slate-50 text-left text-slate-500">
                 <tr>
                   <th className="px-5 py-3 font-medium">თარიღი</th>
@@ -166,7 +171,9 @@ export default function PatientProfilePage() {
                   <th className="px-5 py-3 font-medium">მკურნალობა</th>
                   <th className="px-5 py-3 font-medium">კბილი</th>
                   <th className="px-5 py-3 font-medium">შენიშვნა</th>
-                  <th className="px-5 py-3 text-right font-medium">ფასი</th>
+                  <th className="px-5 py-3 text-right font-medium">სულ გადასახდელი</th>
+                  <th className="px-5 py-3 text-right font-medium">გადახდილი</th>
+                  <th className="px-5 py-3 text-right font-medium">დარჩენილი</th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
@@ -175,7 +182,7 @@ export default function PatientProfilePage() {
                   <tr key={t.id} className="align-top hover:bg-slate-50">
                     <td className="whitespace-nowrap px-5 py-3">{formatDate(t.date)}</td>
                     <td className="px-5 py-3 text-slate-600">{t.doctors?.name ?? "—"}</td>
-                    <td className="px-5 py-3 font-medium">{t.procedure}</td>
+                    <td className="min-w-32 max-w-56 px-5 py-3 font-medium [overflow-wrap:anywhere]">{t.procedure}</td>
                     <td className="px-5 py-3">
                       {t.tooth_number ? (
                         <span className="rounded bg-slate-100 px-2 py-0.5">{t.tooth_number}</span>
@@ -183,8 +190,18 @@ export default function PatientProfilePage() {
                         "—"
                       )}
                     </td>
-                    <td className="max-w-xs whitespace-pre-wrap px-5 py-3 text-slate-600">{t.notes ?? "—"}</td>
+                    <td className="w-64 min-w-48 max-w-xs whitespace-pre-wrap px-5 py-3 text-slate-600 [overflow-wrap:anywhere]">
+                      {t.notes ?? "—"}
+                    </td>
                     <td className="whitespace-nowrap px-5 py-3 text-right font-medium">{formatPrice(t.price)}</td>
+                    <td className="whitespace-nowrap px-5 py-3 text-right text-emerald-700">{formatPrice(t.paid)}</td>
+                    <td
+                      className={`whitespace-nowrap px-5 py-3 text-right font-semibold ${
+                        Number(t.price) - Number(t.paid ?? 0) > 0 ? "text-red-600" : "text-slate-400"
+                      }`}
+                    >
+                      {formatPrice(Number(t.price) - Number(t.paid ?? 0))}
+                    </td>
                     <td className="whitespace-nowrap px-5 py-3 text-right">
                       <button
                         className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
@@ -204,6 +221,23 @@ export default function PatientProfilePage() {
                   </tr>
                 ))}
               </tbody>
+              <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+                <tr>
+                  <td className="px-5 py-3" colSpan={5}>
+                    ჯამი
+                  </td>
+                  <td className="whitespace-nowrap px-5 py-3 text-right">{formatPrice(total)}</td>
+                  <td className="whitespace-nowrap px-5 py-3 text-right text-emerald-700">{formatPrice(paid)}</td>
+                  <td
+                    className={`whitespace-nowrap px-5 py-3 text-right ${
+                      remaining > 0 ? "text-red-600" : "text-slate-400"
+                    }`}
+                  >
+                    {formatPrice(remaining)}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -272,7 +306,7 @@ function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-slate-500">{label}</dt>
-      <dd className="mt-0.5 whitespace-pre-wrap font-medium">{value}</dd>
+      <dd className="mt-0.5 whitespace-pre-wrap font-medium [overflow-wrap:anywhere]">{value}</dd>
     </div>
   );
 }

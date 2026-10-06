@@ -7,6 +7,9 @@ import { formatDate } from "@/lib/format";
 import type { Patient } from "@/lib/types";
 import PatientForm from "@/components/PatientForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import Pagination from "@/components/Pagination";
+
+const PAGE_SIZE = 20;
 
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -14,6 +17,14 @@ export default function PatientsPage() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Patient | null | "new">(null);
   const [deleting, setDeleting] = useState<Patient | null>(null);
+  // Remember the page so returning from a patient profile lands on the same page.
+  const [page, setPage] = useState(() => {
+    try {
+      return Number(sessionStorage.getItem("patients:page")) || 1;
+    } catch {
+      return 1;
+    }
+  });
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("patients").select("*").order("last_name").order("first_name");
@@ -36,6 +47,18 @@ export default function PatientsPage() {
       )
     : patients;
 
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const firstIndex = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = filtered.slice(firstIndex, firstIndex + PAGE_SIZE);
+
+  function goToPage(p: number) {
+    setPage(p);
+    try {
+      sessionStorage.setItem("patients:page", String(p));
+    } catch {}
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -49,7 +72,10 @@ export default function PatientsPage() {
         className="input max-w-md"
         placeholder="🔍 ძებნა სახელით ან ტელეფონით..."
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          goToPage(1);
+        }}
       />
 
       <div className="card overflow-hidden">
@@ -70,7 +96,7 @@ export default function PatientsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((p) => (
+              {pageItems.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3">
                     <Link href={`/patients/${p.id}`} className="font-medium text-teal-700 hover:underline">
@@ -101,7 +127,21 @@ export default function PatientsPage() {
           </table>
         )}
       </div>
-      <p className="text-sm text-slate-400">სულ: {filtered.length}</p>
+      <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
+        <p className="text-sm text-slate-400">
+          {filtered.length > 0
+            ? `ნაჩვენებია ${firstIndex + 1}–${firstIndex + pageItems.length}, სულ ${filtered.length}`
+            : "სულ: 0"}
+        </p>
+        <Pagination
+          page={currentPage}
+          pageCount={pageCount}
+          onChange={(p) => {
+            goToPage(p);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+        />
+      </div>
 
       {editing && (
         <PatientForm

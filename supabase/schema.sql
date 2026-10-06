@@ -76,6 +76,7 @@ create table if not exists public.treatments (
   tooth_number text,
   notes text,
   price numeric(10, 2) not null default 0,
+  paid numeric(10, 2) not null default 0,
   created_at timestamptz not null default now()
 );
 

@@ -36,5 +36,6 @@ export type Treatment = {
   tooth_number: string | null;
   notes: string | null;
   price: number;
+  paid: number;
   doctors?: Pick<Doctor, "id" | "name"> | null;
 };
