@@ -12,7 +12,7 @@ import DraftNotice from "./DraftNotice";
 import TimeSlotPicker from "./TimeSlotPicker";
 import PatientForm from "./PatientForm";
 
-type PatientOption = Pick<Patient, "id" | "first_name" | "last_name" | "phone">;
+type PatientOption = Pick<Patient, "id" | "first_name" | "last_name" | "phone" | "personal_id">;
 
 export default function AppointmentForm({
   appointment,
@@ -52,7 +52,7 @@ export default function AppointmentForm({
   useEffect(() => {
     supabase
       .from("patients")
-      .select("id, first_name, last_name, phone")
+      .select("id, first_name, last_name, phone, personal_id")
       .order("last_name")
       .then(({ data }) => {
         setPatients(data ?? []);
@@ -92,7 +92,8 @@ export default function AppointmentForm({
       (p) =>
         fullName(p).toLowerCase().includes(q) ||
         `${p.last_name} ${p.first_name}`.toLowerCase().includes(q) ||
-        (p.phone ?? "").replace(/\s/g, "").includes(digits),
+        (p.phone ?? "").replace(/\s/g, "").includes(digits) ||
+        (p.personal_id ?? "").includes(digits),
     );
   }
 
@@ -129,6 +130,8 @@ export default function AppointmentForm({
 
   /** Turn the search text into starting values for a new patient. */
   function prefillFromSearch(text: string) {
+    // 11 digits is a Georgian personal ID; other numbers are treated as a phone.
+    if (/^\d{11}$/.test(text.replace(/\s/g, ""))) return { personal_id: text.replace(/\s/g, "") };
     if (/^[\d\s+()-]+$/.test(text)) return { phone: text };
     const [first_name, ...rest] = text.split(/\s+/);
     return { first_name, last_name: rest.join(" ") };
@@ -170,7 +173,7 @@ export default function AppointmentForm({
             <>
               <input
                 className="input"
-                placeholder="🔍 ჩაწერეთ სახელი ან ტელეფონი..."
+                placeholder="🔍 სახელი, ტელეფონი ან პირადი ნომერი..."
                 value={filter}
                 onChange={(e) => handleFilterChange(e.target.value)}
               />

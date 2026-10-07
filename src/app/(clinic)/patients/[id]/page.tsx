@@ -11,6 +11,7 @@ import TreatmentForm from "@/components/TreatmentForm";
 import AppointmentForm from "@/components/AppointmentForm";
 import AppointmentDetails from "@/components/AppointmentDetails";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import XrayModal from "@/components/XrayModal";
 import Pagination, { paginate } from "@/components/Pagination";
 
 export default function PatientProfilePage() {
@@ -25,6 +26,7 @@ export default function PatientProfilePage() {
   const [deletingPatient, setDeletingPatient] = useState(false);
   const [treatmentForm, setTreatmentForm] = useState<Treatment | null | "new">(null);
   const [deletingTreatment, setDeletingTreatment] = useState<Treatment | null>(null);
+  const [xrayTreatment, setXrayTreatment] = useState<Treatment | null>(null);
   const [booking, setBooking] = useState(false);
   const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null);
   const [treatmentPage, setTreatmentPage] = useState(1);
@@ -119,6 +121,7 @@ export default function PatientProfilePage() {
         <dl className="mt-6 grid gap-4 border-t border-slate-100 pt-6 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <Info label="სახელი" value={patient.first_name} />
           <Info label="გვარი" value={patient.last_name} />
+          <Info label="პირადი ნომერი" value={patient.personal_id ?? "—"} />
           <Info label="ტელეფონი" value={patient.phone ?? "—"} />
           <Info label="დაბადების თარიღი" value={formatDate(patient.date_of_birth)} />
           <div className="sm:col-span-2 lg:col-span-4">
@@ -161,9 +164,14 @@ export default function PatientProfilePage() {
               </span>
             </p>
           </div>
-          <button className="btn-primary" onClick={() => setTreatmentForm("new")}>
-            + მკურნალობის დამატება
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/patients/${patient.id}/card`} className="btn-secondary">
+              📋 სამედიცინო ბარათი
+            </Link>
+            <button className="btn-primary" onClick={() => setTreatmentForm("new")}>
+              + მკურნალობის დამატება
+            </button>
+          </div>
         </div>
 
         {treatments.length === 0 ? (
@@ -198,6 +206,17 @@ export default function PatientProfilePage() {
                           )}
                         </p>
                         {t.doctors && <p className="mt-0.5 text-xs text-slate-500">{t.doctors.name}</p>}
+                        <button
+                          type="button"
+                          onClick={() => setXrayTreatment(t)}
+                          className={`mt-1 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium transition ${
+                            t.xray_path
+                              ? "bg-sky-100 text-sky-800 hover:bg-sky-200"
+                              : "border border-dashed border-slate-300 text-slate-500 hover:border-sky-400 hover:text-sky-700"
+                          }`}
+                        >
+                          🩻 {t.xray_path ? "რენტგენი" : "+ რენტგენი"}
+                        </button>
                       </td>
                       <td className="whitespace-pre-wrap px-3 py-3 text-slate-600 [overflow-wrap:anywhere]">
                         {t.notes ?? "—"}
@@ -295,6 +314,7 @@ export default function PatientProfilePage() {
           onClose={() => setDeletingTreatment(null)}
           onConfirm={async () => {
             await supabase.from("treatments").delete().eq("id", deletingTreatment.id);
+            if (deletingTreatment.xray_path) await supabase.storage.from("xrays").remove([deletingTreatment.xray_path]);
             setDeletingTreatment(null);
             load();
           }}
@@ -309,6 +329,9 @@ export default function PatientProfilePage() {
             load();
           }}
         />
+      )}
+      {xrayTreatment && (
+        <XrayModal treatment={xrayTreatment} onClose={() => setXrayTreatment(null)} onChanged={load} />
       )}
       {selectedAppt && (
         <AppointmentDetails appointment={selectedAppt} onClose={() => setSelectedAppt(null)} onChanged={load} />

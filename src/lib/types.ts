@@ -9,6 +9,7 @@ export type Patient = {
   id: string;
   first_name: string;
   last_name: string;
+  personal_id: string | null;
   phone: string | null;
   date_of_birth: string | null;
   notes: string | null;
@@ -36,6 +37,7 @@ export type Treatment = {
   tooth_number: string | null;
   notes: string | null;
   price: number;
+  xray_path: string | null;
   paid: number;
   doctors?: Pick<Doctor, "id" | "name"> | null;
 };

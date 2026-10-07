@@ -52,7 +52,8 @@ export default function PatientsPage() {
         (p) =>
           `${p.first_name} ${p.last_name}`.toLowerCase().includes(q) ||
           `${p.last_name} ${p.first_name}`.toLowerCase().includes(q) ||
-          (p.phone ?? "").replace(/\s/g, "").includes(q.replace(/\s/g, "")),
+          (p.phone ?? "").replace(/\s/g, "").includes(q.replace(/\s/g, "")) ||
+          (p.personal_id ?? "").includes(q.replace(/\s/g, "")),
       )
     : patients;
 
@@ -109,7 +110,7 @@ export default function PatientsPage() {
 
       <input
         className="input max-w-md"
-        placeholder="🔍 ძებნა სახელით ან ტელეფონით..."
+        placeholder="🔍 ძებნა სახელით, ტელეფონით ან პირადი ნომრით..."
         value={search}
         onChange={(e) => {
           setSearch(e.target.value);
@@ -150,6 +151,7 @@ export default function PatientsPage() {
               <tr>
                 <th className="px-5 py-3 font-medium">სახელი, გვარი</th>
                 <th className="px-5 py-3 font-medium">ტელეფონი</th>
+                <th className="hidden px-5 py-3 font-medium sm:table-cell">პირადი ნომერი</th>
                 <th className="hidden px-5 py-3 font-medium md:table-cell">ბოლო ვიზიტი</th>
                 <th className="px-5 py-3" />
                 <th className="w-12 py-3 pl-2 pr-5 text-right">
@@ -173,8 +175,10 @@ export default function PatientsPage() {
                     <Link href={`/patients/${p.id}`} className="font-medium text-teal-700 hover:underline">
                       {p.first_name} {p.last_name}
                     </Link>
+                    {p.personal_id && <p className="text-xs tabular-nums text-slate-400 sm:hidden">პ/ნ {p.personal_id}</p>}
                   </td>
                   <td className="px-5 py-3 text-slate-600">{p.phone ?? "—"}</td>
+                  <td className="hidden whitespace-nowrap px-5 py-3 tabular-nums text-slate-600 sm:table-cell">{p.personal_id ?? "—"}</td>
                   <td className="hidden whitespace-nowrap px-5 py-3 text-slate-600 md:table-cell">
                     {p.appointments[0] ? (
                       <>
