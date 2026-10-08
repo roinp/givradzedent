@@ -8,7 +8,7 @@ const georgian = Noto_Sans_Georgian({
 });
 
 export const metadata: Metadata = {
-  title: "გივრაძე დენტ — კლინიკის მართვა",
+  title: "LIGHT DENT — კლინიკის მართვა",
   description: "სტომატოლოგიური კლინიკის მართვის სისტემა",
 };
 

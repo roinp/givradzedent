@@ -11,7 +11,7 @@ import TreatmentForm from "@/components/TreatmentForm";
 import AppointmentForm from "@/components/AppointmentForm";
 import AppointmentDetails from "@/components/AppointmentDetails";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import XrayModal from "@/components/XrayModal";
+import XrayModal, { xrayPathsOf } from "@/components/XrayModal";
 import Pagination, { paginate } from "@/components/Pagination";
 
 export default function PatientProfilePage() {
@@ -168,6 +168,9 @@ export default function PatientProfilePage() {
             <Link href={`/patients/${patient.id}/card`} className="btn-secondary">
               📋 სამედიცინო ბარათი
             </Link>
+            <Link href={`/patients/${patient.id}/card/history`} className="btn-secondary">
+              🗂 ბარათის ისტორია
+            </Link>
             <button className="btn-primary" onClick={() => setTreatmentForm("new")}>
               + მკურნალობის დამატება
             </button>
@@ -210,12 +213,12 @@ export default function PatientProfilePage() {
                           type="button"
                           onClick={() => setXrayTreatment(t)}
                           className={`mt-1 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium transition ${
-                            t.xray_path
+                            xrayPathsOf(t).length
                               ? "bg-sky-100 text-sky-800 hover:bg-sky-200"
                               : "border border-dashed border-slate-300 text-slate-500 hover:border-sky-400 hover:text-sky-700"
                           }`}
                         >
-                          🩻 {t.xray_path ? "რენტგენი" : "+ რენტგენი"}
+                          🩻 {xrayPathsOf(t).length ? `რენტგენი (${xrayPathsOf(t).length})` : "+ რენტგენი"}
                         </button>
                       </td>
                       <td className="whitespace-pre-wrap px-3 py-3 text-slate-600 [overflow-wrap:anywhere]">
@@ -314,7 +317,8 @@ export default function PatientProfilePage() {
           onClose={() => setDeletingTreatment(null)}
           onConfirm={async () => {
             await supabase.from("treatments").delete().eq("id", deletingTreatment.id);
-            if (deletingTreatment.xray_path) await supabase.storage.from("xrays").remove([deletingTreatment.xray_path]);
+            const xrays = xrayPathsOf(deletingTreatment);
+            if (xrays.length) await supabase.storage.from("xrays").remove(xrays);
             setDeletingTreatment(null);
             load();
           }}

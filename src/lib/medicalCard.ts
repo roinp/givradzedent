@@ -6,6 +6,8 @@ export type DiaryRow = { date: string; text: string; doctor: string };
 
 export type MedicalCardData = {
   provider: string;
+  /** Identifies one examination; a new one starts a separate entry in the card history. */
+  exam_key: string;
   // Card (personal data not stored on the patient record)
   sex: string;
   address: string;
@@ -45,6 +47,7 @@ export type MedicalCardData = {
 export function emptyCard(): MedicalCardData {
   return {
     provider: CLINIC_NAME,
+    exam_key: "",
     sex: "",
     address: "",
     workplace: "",

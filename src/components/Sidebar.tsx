@@ -37,7 +37,7 @@ export default function Sidebar({
           🦷
         </div>
         <div>
-          <p className="font-semibold text-white">გივრაძე დენტ</p>
+          <p className="font-semibold text-white">LIGHT DENT</p>
           <p className="text-xs text-slate-400">კლინიკის მართვა</p>
         </div>
       </div>

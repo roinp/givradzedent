@@ -60,7 +60,7 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
           >
             ☰
           </button>
-          <span className="font-semibold">🦷 გივრაძე დენტ</span>
+          <span className="font-semibold">🦷 LIGHT DENT</span>
         </header>
         <main className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">{children}</main>
       </div>

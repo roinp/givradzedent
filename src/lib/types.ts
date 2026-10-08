@@ -38,6 +38,7 @@ export type Treatment = {
   notes: string | null;
   price: number;
   xray_path: string | null;
+  xray_paths: string[];
   paid: number;
   doctors?: Pick<Doctor, "id" | "name"> | null;
 };

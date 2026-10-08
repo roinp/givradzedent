@@ -20,6 +20,7 @@ import {
   TEETH_LOWER,
   TEETH_UPPER,
   TOOTH_CODES,
+  emptyCard,
   normalizeCard,
   type MedicalCardData,
 } from "@/lib/medicalCard";
@@ -87,7 +88,8 @@ function CardForm({ patientId, patient, card, cardNumber: initialNumber }: Loade
     update(key, list.includes(item) ? list.filter((x) => x !== item) : [...list, item]);
   }
 
-  async function save() {
+  /** Saves the card and its history copy; returns false if the card could not be saved. */
+  async function save(): Promise<boolean> {
     setBusy(true);
     setError(null);
     const { data, error } = await supabase
@@ -98,11 +100,45 @@ function CardForm({ patientId, patient, card, cardNumber: initialNumber }: Loade
       )
       .select("card_number")
       .single();
+    if (error) {
+      setBusy(false);
+      setError(error.message);
+      return false;
+    }
+    // History copy: today's entry of this examination is updated, otherwise a new entry is added.
+    const today = todayISO();
+    const { data: todays } = await supabase
+      .from("medical_card_versions")
+      .select("id, data")
+      .eq("patient_id", patientId)
+      .eq("version_date", today);
+    const sameExam = (todays ?? []).find(
+      (v) => ((v.data as Partial<MedicalCardData>)?.exam_key ?? "") === form.exam_key,
+    );
+    const copy = { card_number: data.card_number, data: form, saved_at: new Date().toISOString() };
+    const { error: historyError } = sameExam
+      ? await supabase.from("medical_card_versions").update(copy).eq("id", sameExam.id)
+      : await supabase
+          .from("medical_card_versions")
+          .insert({ ...copy, patient_id: patientId, version_date: today });
     setBusy(false);
-    if (error) return setError(error.message);
+    if (historyError) setError(`ბარათი შეინახა, მაგრამ ისტორიაში ვერ ჩაიწერა: ${historyError.message}`);
     setCardNumber(data.card_number);
     setSavedJson(JSON.stringify(form));
     draft.clear();
+    return true;
+  }
+
+  // New examination: unsaved changes are saved to history first, then the form is cleared.
+  async function startNewExam() {
+    if (!isSaved && !(await save())) return;
+    setForm({
+      ...emptyCard(),
+      provider: form.provider,
+      exam_key: crypto.randomUUID(),
+      exam_date: todayISO(),
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function importTreatments() {
@@ -129,11 +165,21 @@ function CardForm({ patientId, patient, card, cardNumber: initialNumber }: Loade
       <Link href={`/patients/${patientId}`} className="text-sm text-slate-500 hover:text-slate-800">
         ← {patient.first_name} {patient.last_name}
       </Link>
-      <div>
-        <h1 className="text-2xl font-semibold">
-          სამედიცინო ბარათი {cardNumber !== null && <span className="text-slate-400">№ {cardNumber}</span>}
-        </h1>
-        <p className="text-sm text-slate-500">ფორმა IV-220 · ივსება ექიმის მიერ</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">
+            სამედიცინო ბარათი {cardNumber !== null && <span className="text-slate-400">№ {cardNumber}</span>}
+          </h1>
+          <p className="text-sm text-slate-500">ფორმა IV-220 · ივსება ექიმის მიერ</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link href={`/patients/${patientId}/card/history`} className="btn-secondary">
+            🗂 ბარათის ისტორია
+          </Link>
+          <button type="button" className="btn-secondary" disabled={busy} onClick={startNewExam}>
+            {busy ? "ინახება..." : "🆕 ახალი გასინჯვა"}
+          </button>
+        </div>
       </div>
       <DraftNotice restored={draft.restored} onReset={draft.reset} />
 
