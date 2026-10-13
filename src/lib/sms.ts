@@ -1,7 +1,7 @@
 // Server-only helpers for sending visit SMS through beephub.ge (API v2).
 import { createClient } from "@supabase/supabase-js";
 
-const API_URL = "https://api.beephub.ge/api/v2/sms:send";
+const API_URL = "https://sms-api.beephub.ge/v2/sms:send";
 export const CLINIC_ADDRESS = "ზვიად გამსახურდიას ქ. №49";
 
 export type VisitForSms = {
@@ -20,8 +20,16 @@ function formatWhen(date: string, time: string) {
   return `${d}.${m}.${y} ${time.slice(0, 5)}`;
 }
 
+/** "ბერიძე" → "ბერიძესთან", "გელაშვილი" → "გელაშვილთან" (Georgian "with" case). */
+function withCase(name: string) {
+  const trimmed = name.trim();
+  if (trimmed.endsWith("ი")) return `${trimmed.slice(0, -1)}თან`;
+  if (/[აეოუ]$/.test(trimmed)) return `${trimmed}სთან`;
+  return `${trimmed}თან`;
+}
+
 export function visitMessage(v: VisitForSms) {
-  const doctor = v.doctors?.name ? ` ექიმ ${v.doctors.name}` : "";
+  const doctor = v.doctors?.name ? ` ექიმ ${withCase(v.doctors.name)}` : "";
   return `მოგესალმებით! თქვენი ვიზიტი${doctor} ჩანიშნულია, ${formatWhen(v.date, v.time)}.\nმისამართი: ${CLINIC_ADDRESS}.`;
 }
 
@@ -40,15 +48,29 @@ export async function sendSms(to: string, text: string, reference: string) {
   const from = process.env.BEEPHUB_SENDER ?? "Light dent";
   if (!apiKey) throw new Error("BEEPHUB_API_KEY არ არის მითითებული");
 
+  const request = { from, text, clientReference: reference, messages: [{ to }] };
   const res = await fetch(API_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, text, clientReference: reference, messages: [{ to }] }),
+    body: JSON.stringify(request),
   });
   const body = await res.json().catch(() => null);
+  const log: SmsLog = { request, status: res.status, response: body };
   const state = body?.messages?.[0]?.state ?? body?.state;
   if (!res.ok || (state && state !== "ACCEPTED")) {
-    throw new Error(body?.detail ?? body?.title ?? `SMS შეცდომა (${res.status})`);
+    throw new SmsError(body?.detail ?? body?.title ?? `SMS შეცდომა (${res.status})`, log);
+  }
+  return log;
+}
+
+export type SmsLog = { request: unknown; status: number; response: unknown };
+
+export class SmsError extends Error {
+  constructor(
+    message: string,
+    public log: SmsLog,
+  ) {
+    super(message);
   }
 }
 
