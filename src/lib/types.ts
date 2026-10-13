@@ -28,6 +28,12 @@ export type Appointment = {
   doctors?: Pick<Doctor, "id" | "name"> | null;
 };
 
+export type BlockedSlot = {
+  id: string;
+  date: string;
+  time: string;
+};
+
 export type Treatment = {
   id: string;
   patient_id: string;

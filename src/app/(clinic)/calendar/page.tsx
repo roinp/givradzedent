@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { WEEKDAYS_SHORT, formatDate, formatTime, fullName, monthName, toISODate, todayISO } from "@/lib/format";
-import type { Appointment } from "@/lib/types";
+import type { Appointment, BlockedSlot } from "@/lib/types";
 import AppointmentForm from "@/components/AppointmentForm";
 import AppointmentDetails from "@/components/AppointmentDetails";
 import DaySchedule from "@/components/DaySchedule";
@@ -22,6 +22,8 @@ export default function CalendarPage() {
   const [month, setMonth] = useState(now.getMonth());
   const [selectedDate, setSelectedDate] = useState(todayISO());
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
+  const [blockError, setBlockError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Appointment | null>(null);
   const [booking, setBooking] = useState(false);
   const [bookingTime, setBookingTime] = useState<string | undefined>();
@@ -33,14 +35,18 @@ export default function CalendarPage() {
     const grid = monthGrid(year, month);
     const rangeStart = toISODate(grid[0]);
     const rangeEnd = toISODate(grid[grid.length - 1]);
-    const { data } = await supabase
-      .from("appointments")
-      .select("*, patients(id, first_name, last_name, phone), doctors(id, name)")
-      .gte("date", rangeStart)
-      .lte("date", rangeEnd)
-      .order("date")
-      .order("time");
+    const [{ data }, { data: blocked }] = await Promise.all([
+      supabase
+        .from("appointments")
+        .select("*, patients(id, first_name, last_name, phone), doctors(id, name)")
+        .gte("date", rangeStart)
+        .lte("date", rangeEnd)
+        .order("date")
+        .order("time"),
+      supabase.from("blocked_slots").select("*").gte("date", rangeStart).lte("date", rangeEnd),
+    ]);
     setAppointments(data ?? []);
+    setBlockedSlots(blocked ?? []);
   }, [year, month]);
 
   useEffect(() => {
@@ -53,6 +59,38 @@ export default function CalendarPage() {
     byDate.set(a.date, [...(byDate.get(a.date) ?? []), a]);
   }
   const dayAppointments = byDate.get(selectedDate) ?? [];
+
+  const blockedByDate = new Map<string, Set<string>>();
+  for (const b of blockedSlots) {
+    if (!blockedByDate.has(b.date)) blockedByDate.set(b.date, new Set());
+    blockedByDate.get(b.date)!.add(formatTime(b.time));
+  }
+  const dayBlocked = blockedByDate.get(selectedDate) ?? new Set<string>();
+
+  async function toggleBlock(time: string) {
+    const { error } = dayBlocked.has(time)
+      ? await supabase.from("blocked_slots").delete().eq("date", selectedDate).eq("time", time)
+      : await supabase.from("blocked_slots").insert({ date: selectedDate, time });
+    setBlockError(error?.message ?? null);
+    load();
+  }
+
+  async function blockDay(times: string[]) {
+    const { error } = await supabase
+      .from("blocked_slots")
+      .upsert(
+        times.map((time) => ({ date: selectedDate, time })),
+        { onConflict: "date,time", ignoreDuplicates: true },
+      );
+    setBlockError(error?.message ?? null);
+    load();
+  }
+
+  async function unblockDay() {
+    const { error } = await supabase.from("blocked_slots").delete().eq("date", selectedDate);
+    setBlockError(error?.message ?? null);
+    load();
+  }
 
   function shiftMonth(delta: number) {
     const d = new Date(year, month + delta, 1);
@@ -137,6 +175,11 @@ export default function CalendarPage() {
                     >
                       {d.getDate()}
                     </span>
+                    {blockedByDate.has(iso) && (
+                      <span className="ml-auto mr-1 text-[10px] opacity-60" title="აქვს დაბლოკილი საათები">
+                        🔒
+                      </span>
+                    )}
                     {list.length > 0 && (
                       <span className="rounded-full bg-teal-100 px-1.5 text-[10px] font-semibold text-teal-700 sm:hidden">
                         {list.length}
@@ -205,12 +248,20 @@ export default function CalendarPage() {
         <DaySchedule
           date={selectedDate}
           appointments={dayAppointments}
-          onClose={() => setDayOpen(false)}
+          onClose={() => {
+            setDayOpen(false);
+            setBlockError(null);
+          }}
           onOpenAppointment={setSelected}
           onBook={(time) => {
             setBookingTime(time);
             setBooking(true);
           }}
+          blocked={dayBlocked}
+          onToggleBlock={toggleBlock}
+          onBlockDay={blockDay}
+          onUnblockDay={unblockDay}
+          error={blockError}
         />
       )}
       {selected && (

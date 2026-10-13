@@ -62,6 +62,7 @@ export default function AppointmentForm({
 
   // Other appointments on the chosen day, used to mark taken time slots.
   const [dayAppointments, setDayAppointments] = useState<Appointment[]>([]);
+  const [dayBlocked, setDayBlocked] = useState<string[]>([]);
   useEffect(() => {
     if (!form.date) return;
     supabase
@@ -69,9 +70,19 @@ export default function AppointmentForm({
       .select("id, time, doctor_id, patients(first_name, last_name)")
       .eq("date", form.date)
       .then(({ data }) => setDayAppointments((data as unknown as Appointment[]) ?? []));
+    supabase
+      .from("blocked_slots")
+      .select("time")
+      .eq("date", form.date)
+      .then(({ data }) => setDayBlocked((data ?? []).map((b) => b.time.slice(0, 5))));
   }, [form.date]);
 
   const takenSlots: Record<string, string> = {};
+  for (const t of dayBlocked) {
+    // An existing visit may stay at its own time even if that time was blocked later.
+    if (appointment && appointment.date === form.date && appointment.time.slice(0, 5) === t) continue;
+    takenSlots[t] = "დაბლოკილია";
+  }
   for (const a of dayAppointments) {
     if (a.id === appointment?.id) continue;
     if (form.doctor_id && a.doctor_id !== form.doctor_id) continue;
@@ -154,13 +165,48 @@ export default function AppointmentForm({
       reason: form.reason.trim() || null,
       notes: form.notes.trim() || null,
     };
-    const { error } = appointment
-      ? await supabase.from("appointments").update(payload).eq("id", appointment.id)
-      : await supabase.from("appointments").insert(payload);
+    // A moved visit needs a fresh day-before reminder.
+    const moved =
+      appointment && (appointment.date !== form.date || appointment.time.slice(0, 5) !== form.time);
+    const { data: saved, error } = appointment
+      ? await supabase
+          .from("appointments")
+          .update(moved ? { ...payload, sms_reminder_sent_at: null } : payload)
+          .eq("id", appointment.id)
+          .select("id")
+          .single()
+      : await supabase.from("appointments").insert(payload).select("id").single();
+    if (error) {
+      setBusy(false);
+      return setError(error.message);
+    }
+    if (!appointment || moved) {
+      const smsError = await sendBookingSms(saved.id);
+      if (smsError) window.alert(`ვიზიტი შენახულია, მაგრამ SMS ვერ გაიგზავნა:\n${smsError}`);
+    }
     setBusy(false);
-    if (error) return setError(error.message);
     draft.clear();
     onSaved();
+  }
+
+  /** Returns an error message, or null when the SMS was sent. */
+  async function sendBookingSms(appointmentId: string) {
+    const { data } = await supabase.auth.getSession();
+    try {
+      const res = await fetch("/api/sms/confirm", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${data.session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ appointmentId }),
+      });
+      if (res.ok) return null;
+      const body = await res.json().catch(() => null);
+      return body?.error ?? `შეცდომა ${res.status}`;
+    } catch {
+      return "სერვერთან კავშირი ვერ დამყარდა";
+    }
   }
 
   return (
