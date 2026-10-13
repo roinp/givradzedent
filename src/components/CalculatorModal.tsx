@@ -2,19 +2,33 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { formatPrice } from "@/lib/format";
+import { formatDateShort, formatPrice } from "@/lib/format";
 import { useDraft } from "@/lib/useDraft";
-import { buildQuoteHtml, emptyRow, rowTotal, type Quote, type Row } from "@/lib/quote";
+import { buildQuoteHtml, computeQuote, emptyRow, rowTotal, type Quote, type Row } from "@/lib/quote";
 import Modal from "./Modal";
+import ErrorText from "./ErrorText";
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
+type SavedCalc = {
+  id: string;
+  patient_name: string | null;
+  discount: number;
+  rows: Row[];
+  total: number;
+  updated_at: string;
+};
 
-/** Quick price calculator: treatments × quantity × price, minus a percentage discount. */
+const blank = () => ({ savedId: "", patient: "", discount: "", rows: [emptyRow()] });
+
+/** Price calculator (treatments × quantity × price, minus a % discount) with saving and printing. */
 export default function CalculatorModal({ onClose }: { onClose: () => void }) {
-  const draft = useDraft("calculator", { patient: "", discount: "", rows: [emptyRow()] });
+  const draft = useDraft("calculator", blank());
   const { value, setValue } = draft;
+  const [view, setView] = useState<"edit" | "saved">("edit");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [patientNames, setPatientNames] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedJson, setSavedJson] = useState<string | null>(null);
 
   // Names of treatments done before and of patients, offered as suggestions.
   useEffect(() => {
@@ -37,29 +51,84 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
   const removeRow = (i: number) =>
     setValue({ ...value, rows: value.rows.length > 1 ? value.rows.filter((_, j) => j !== i) : [emptyRow()] });
 
-  const subtotal = round2(value.rows.reduce((s, r) => s + rowTotal(r), 0));
-  const percent = Math.min(100, Math.max(0, Number(value.discount) || 0));
-  const discountAmount = round2((subtotal * percent) / 100);
-  const total = round2(subtotal - discountAmount);
-  const printableRows = value.rows.filter((r) => r.name.trim() || Number(r.price));
+  const quote = computeQuote(value.patient, value.discount, value.rows);
+  const isSaved = !!value.savedId && savedJson === JSON.stringify(value);
 
-  function print() {
-    printQuote({
-      patient: value.patient.trim(),
-      rows: printableRows,
-      subtotal,
-      percent,
-      discountAmount,
-      total,
-    });
+  async function save() {
+    setBusy(true);
+    setError(null);
+    const payload = {
+      patient_name: quote.patient || null,
+      discount: quote.percent,
+      rows: quote.rows,
+      total: quote.total,
+      updated_at: new Date().toISOString(),
+    };
+    const res = value.savedId
+      ? await supabase.from("calculations").update(payload).eq("id", value.savedId).select("id").single()
+      : await supabase.from("calculations").insert(payload).select("id").single();
+    setBusy(false);
+    if (res.error) return setError(res.error.message);
+    const next = { ...value, savedId: res.data.id };
+    setValue(next);
+    setSavedJson(JSON.stringify(next));
+  }
+
+  function open(c: SavedCalc) {
+    const next = {
+      savedId: c.id,
+      patient: c.patient_name ?? "",
+      discount: c.discount ? String(c.discount) : "",
+      rows: c.rows.length ? c.rows : [emptyRow()],
+    };
+    setValue(next);
+    setSavedJson(JSON.stringify(next));
+    setError(null);
+    setView("edit");
+  }
+
+  function startNew() {
+    draft.reset();
+    setSavedJson(null);
+    setError(null);
+  }
+
+  if (view === "saved") {
+    return (
+      <Modal title="📂 შენახული კალკულაციები" onClose={onClose} wide>
+        <SavedList
+          currentId={value.savedId}
+          onOpen={open}
+          onBack={() => setView("edit")}
+          onDeleted={(id) => {
+            if (id === value.savedId) {
+              setValue({ ...value, savedId: "" });
+              setSavedJson(null);
+            }
+          }}
+        />
+      </Modal>
+    );
   }
 
   return (
     <Modal title="🧮 კალკულაცია" onClose={onClose} wide>
       <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="btn-secondary py-1.5" onClick={() => setView("saved")}>
+            📂 შენახული
+          </button>
+          <button type="button" className="btn-secondary py-1.5" onClick={startNew}>
+            + ახალი
+          </button>
+          <span className={`ml-auto text-sm ${isSaved ? "text-emerald-700" : "text-slate-400"}`}>
+            {isSaved ? "✓ შენახულია" : value.savedId ? "● შეუნახავი ცვლილებები" : "ახალი კალკულაცია"}
+          </span>
+        </div>
+
         <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
           <div className="min-w-48 flex-1">
-            <label className="label">პაციენტი (ბეჭდვისთვის)</label>
+            <label className="label">პაციენტი</label>
             <input
               className="input"
               list="calc-patients"
@@ -166,33 +235,165 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
         <div className="ml-auto max-w-xs space-y-1.5 rounded-lg border border-slate-200 p-4 text-sm">
           <div className="flex justify-between">
             <span className="text-slate-500">ჯამი</span>
-            <span className="tabular-nums">{formatPrice(subtotal)}</span>
+            <span className="tabular-nums">{formatPrice(quote.subtotal)}</span>
           </div>
-          {percent > 0 && (
+          {quote.percent > 0 && (
             <div className="flex justify-between text-red-600">
-              <span>ფასდაკლება ({percent}%)</span>
-              <span className="tabular-nums">−{formatPrice(discountAmount)}</span>
+              <span>ფასდაკლება ({quote.percent}%)</span>
+              <span className="tabular-nums">−{formatPrice(quote.discountAmount)}</span>
             </div>
           )}
           <div className="flex justify-between border-t border-slate-200 pt-2 text-lg font-semibold">
             <span>გადასახდელი</span>
-            <span className="tabular-nums text-teal-700">{formatPrice(total)}</span>
+            <span className="tabular-nums text-teal-700">{formatPrice(quote.total)}</span>
           </div>
         </div>
 
-        <div className="flex justify-end gap-2">
-          <button type="button" className="btn-secondary text-red-600" onClick={draft.reset}>
-            გასუფთავება
-          </button>
-          <button type="button" className="btn-secondary mr-auto sm:order-first" onClick={onClose}>
+        <ErrorText
+          error={
+            error && /calculations/.test(error)
+              ? `${error} — გაუშვით supabase/add_calculations.sql Supabase-ში.`
+              : error
+          }
+        />
+
+        <div className="flex flex-wrap justify-end gap-2">
+          <button type="button" className="btn-secondary mr-auto" onClick={onClose}>
             დახურვა
           </button>
-          <button type="button" className="btn-primary" disabled={printableRows.length === 0} onClick={print}>
+          <button type="button" className="btn-secondary text-red-600" onClick={startNew}>
+            გასუფთავება
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={busy || quote.rows.length === 0 || isSaved}
+            onClick={save}
+          >
+            {busy ? "ინახება..." : "💾 შენახვა"}
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={quote.rows.length === 0}
+            onClick={() => printQuote(quote)}
+          >
             🖨 ბეჭდვა
           </button>
         </div>
       </div>
     </Modal>
+  );
+}
+
+function SavedList({
+  currentId,
+  onOpen,
+  onBack,
+  onDeleted,
+}: {
+  currentId: string;
+  onOpen: (c: SavedCalc) => void;
+  onBack: () => void;
+  onDeleted: (id: string) => void;
+}) {
+  const [items, setItems] = useState<SavedCalc[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from("calculations")
+      .select("id, patient_name, discount, rows, total, updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(300)
+      .then(({ data, error }) => {
+        if (error) return setError(`${error.message} — გაუშვით supabase/add_calculations.sql Supabase-ში.`);
+        setItems(data ?? []);
+      });
+  }, []);
+
+  async function remove(id: string) {
+    const { error } = await supabase.from("calculations").delete().eq("id", id);
+    setConfirmId(null);
+    if (error) return setError(error.message);
+    setItems((list) => (list ?? []).filter((c) => c.id !== id));
+    onDeleted(id);
+  }
+
+  const q = search.trim().toLowerCase();
+  const visible = (items ?? []).filter((c) => !q || (c.patient_name ?? "").toLowerCase().includes(q));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn-secondary py-1.5" onClick={onBack}>
+          ← კალკულაცია
+        </button>
+        <input
+          className="input max-w-xs flex-1"
+          placeholder="🔍 ძებნა პაციენტით..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+      <ErrorText error={error} />
+      {!items && !error && <p className="text-sm text-slate-400">იტვირთება...</p>}
+      {items && visible.length === 0 && (
+        <p className="py-6 text-center text-sm text-slate-400">
+          {items.length ? "ვერ მოიძებნა" : "შენახული კალკულაციები ჯერ არ არის"}
+        </p>
+      )}
+      <div className="max-h-[60vh] divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
+        {visible.map((c) => (
+          <div
+            key={c.id}
+            className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 ${c.id === currentId ? "bg-teal-50" : ""}`}
+          >
+            <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onOpen(c)}>
+              <p className="truncate font-medium">{c.patient_name || "უსახელო"}</p>
+              <p className="text-xs text-slate-500">
+                {formatDateShort(c.updated_at.slice(0, 10))} · {c.rows.length} პოზიცია
+                {c.discount > 0 && ` · −${Number(c.discount)}%`}
+              </p>
+            </button>
+            <span className="font-semibold tabular-nums text-teal-700">{formatPrice(c.total)}</span>
+            {confirmId === c.id ? (
+              <span className="flex items-center gap-2 text-sm">
+                <span className="text-red-600">წაიშალოს?</span>
+                <button className="btn-secondary px-2 py-1" onClick={() => setConfirmId(null)}>
+                  არა
+                </button>
+                <button className="btn-danger px-2 py-1" onClick={() => remove(c.id)}>
+                  დიახ
+                </button>
+              </span>
+            ) : (
+              <span className="flex gap-1">
+                <button className="btn-secondary px-2.5 py-1" onClick={() => onOpen(c)}>
+                  გახსნა
+                </button>
+                <button
+                  className="btn-secondary px-2.5 py-1"
+                  title="ბეჭდვა"
+                  onClick={() => printQuote(computeQuote(c.patient_name ?? "", c.discount, c.rows))}
+                >
+                  🖨
+                </button>
+                <button
+                  className="rounded-lg px-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                  title="წაშლა"
+                  onClick={() => setConfirmId(c.id)}
+                >
+                  🗑
+                </button>
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

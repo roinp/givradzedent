@@ -76,3 +76,14 @@ export function buildQuoteHtml(q: Quote) {
   <div class="sign"><span>ექიმი: ____________________</span><span>პაციენტი: ____________________</span></div>
 </body></html>`;
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Totals for a calculation; rows without a name or price are left out. */
+export function computeQuote(patient: string, discount: string | number, rows: Row[]): Quote {
+  const used = rows.filter((r) => r.name.trim() || Number(r.price));
+  const subtotal = round2(used.reduce((s, r) => s + rowTotal(r), 0));
+  const percent = Math.min(100, Math.max(0, Number(discount) || 0));
+  const discountAmount = round2((subtotal * percent) / 100);
+  return { patient: patient.trim(), rows: used, subtotal, percent, discountAmount, total: round2(subtotal - discountAmount) };
+}
