@@ -191,3 +191,4 @@ alter table public.medical_card_versions enable row level security;
 drop policy if exists "staff all medical_card_versions" on public.medical_card_versions;
 create policy "staff all medical_card_versions" on public.medical_card_versions
   for all to authenticated using (true) with check (true);
+

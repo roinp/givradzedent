@@ -6,12 +6,14 @@ import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
 import SetupNotice from "@/components/SetupNotice";
+import CalculatorModal from "@/components/CalculatorModal";
 
 export default function ClinicLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   const [checking, setChecking] = useState(isSupabaseConfigured);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [calcOpen, setCalcOpen] = useState(false);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -43,6 +45,7 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
         open={menuOpen}
         onNavigate={() => setMenuOpen(false)}
         onLogout={() => supabase.auth.signOut()}
+        onCalculator={() => setCalcOpen(true)}
       />
       {menuOpen && (
         <div
@@ -63,6 +66,7 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
           <span className="font-semibold">🦷 LIGHT DENT</span>
         </header>
         <main className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">{children}</main>
+        {calcOpen && <CalculatorModal onClose={() => setCalcOpen(false)} />}
       </div>
     </div>
   );

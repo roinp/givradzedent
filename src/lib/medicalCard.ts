@@ -2,6 +2,9 @@
 
 export const CLINIC_NAME = "გივრაძე დენტ";
 
+/** Brand name shown in the app header and on printouts. */
+export const CLINIC_BRAND = "LIGHT DENT";
+
 export type DiaryRow = { date: string; text: string; doctor: string };
 
 export type MedicalCardData = {

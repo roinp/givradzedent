@@ -16,11 +16,13 @@ export default function Sidebar({
   open,
   onNavigate,
   onLogout,
+  onCalculator,
 }: {
   email: string;
   open: boolean;
   onNavigate: () => void;
   onLogout: () => void;
+  onCalculator: () => void;
 }) {
   const pathname = usePathname();
   const isActive = (href: string) =>
@@ -58,6 +60,17 @@ export default function Sidebar({
             {item.label}
           </Link>
         ))}
+        <button
+          type="button"
+          onClick={() => {
+            onNavigate();
+            onCalculator();
+          }}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 transition hover:bg-slate-800 hover:text-white"
+        >
+          <span className="w-5 text-center">🧮</span>
+          კალკულაცია
+        </button>
       </nav>
 
       <div className="border-t border-slate-800 p-4">
