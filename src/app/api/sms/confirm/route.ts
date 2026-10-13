@@ -9,12 +9,21 @@ export async function POST(request: Request) {
   if (!appointmentId) return Response.json({ error: "appointmentId აკლია" }, { status: 400 });
 
   const db = userClient(token);
+  const { data: auth, error: authError } = await db.auth.getUser(token);
+  if (authError || !auth.user) {
+    return Response.json({ error: `ავტორიზაცია ვერ დადასტურდა: ${authError?.message ?? ""}` }, { status: 401 });
+  }
   const { data, error } = await db
     .from("appointments")
     .select(VISIT_SMS_SELECT)
     .eq("id", appointmentId)
-    .single();
-  if (error || !data) return Response.json({ error: "ვიზიტი ვერ მოიძებნა" }, { status: 404 });
+    .maybeSingle();
+  if (error || !data) {
+    return Response.json(
+      { error: `ვიზიტი ვერ მოიძებნა (${error?.message ?? `id ${appointmentId}`})` },
+      { status: 404 },
+    );
+  }
 
   const visit = data as unknown as VisitForSms;
   const to = normalizePhone(visit.patients?.phone);
