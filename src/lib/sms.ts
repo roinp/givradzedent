@@ -45,7 +45,7 @@ export function normalizePhone(phone: string | null | undefined) {
  */
 export async function sendSms(to: string, text: string, reference: string) {
   const apiKey = process.env.BEEPHUB_API_KEY;
-  const from = process.env.BEEPHUB_SENDER ?? "Light dent";
+  const from = process.env.BEEPHUB_SENDER ?? "Z.GIVRADZE";
   if (!apiKey) throw new Error("BEEPHUB_API_KEY არ არის მითითებული");
 
   const request = { from, text, clientReference: reference, messages: [{ to }] };
