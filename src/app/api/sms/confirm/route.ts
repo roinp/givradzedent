@@ -29,6 +29,9 @@ export async function POST(request: Request) {
   const to = normalizePhone(visit.patients?.phone);
   if (!to) return Response.json({ error: "პაციენტს მობილურის ნომერი არ აქვს" }, { status: 422 });
 
+  // Give the booking a moment to settle before notifying the patient.
+  await new Promise((resolve) => setTimeout(resolve, 10_000));
+
   let sms;
   try {
     sms = await sendSms(to, visitMessage(visit), `confirm-${visit.id}-${visit.date}-${visit.time}`);

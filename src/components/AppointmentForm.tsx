@@ -181,8 +181,10 @@ export default function AppointmentForm({
       return setError(error.message);
     }
     if (!appointment || moved) {
-      const smsError = await sendBookingSms(saved.id);
-      if (smsError) window.alert(`ვიზიტი შენახულია, მაგრამ SMS ვერ გაიგზავნა:\n${smsError}`);
+      // The server waits 10 seconds before sending, so don't keep the form open for it.
+      sendBookingSms(saved.id).then((smsError) => {
+        if (smsError) window.alert(`ვიზიტი შენახულია, მაგრამ SMS ვერ გაიგზავნა:\n${smsError}`);
+      });
     }
     setBusy(false);
     draft.clear();
@@ -201,8 +203,14 @@ export default function AppointmentForm({
         },
         body: JSON.stringify({ appointmentId }),
       });
-      if (res.ok) return null;
       const body = await res.json().catch(() => null);
+      if (body?.sms) {
+        console.log("[SMS] request body:", body.sms.request);
+        console.log(`[SMS] response ${body.sms.status}:`, body.sms.response);
+      } else {
+        console.log(`[SMS] ${res.status}:`, body);
+      }
+      if (res.ok) return null;
       return body?.error ?? `შეცდომა ${res.status}`;
     } catch {
       return "სერვერთან კავშირი ვერ დამყარდა";

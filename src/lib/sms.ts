@@ -45,16 +45,18 @@ export function normalizePhone(phone: string | null | undefined) {
  */
 export async function sendSms(to: string, text: string, reference: string) {
   const apiKey = process.env.BEEPHUB_API_KEY;
-  const from = process.env.BEEPHUB_SENDER ?? "Z.GIVRADZE";
+  const from = process.env.BEEPHUB_SENDER ?? "Z. GIVRADZE";
   if (!apiKey) throw new Error("BEEPHUB_API_KEY არ არის მითითებული");
 
   const request = { from, text, clientReference: reference, messages: [{ to }] };
+  console.log("[SMS] request body:", JSON.stringify(request, null, 2));
   const res = await fetch(API_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
   const body = await res.json().catch(() => null);
+  console.log(`[SMS] response ${res.status}:`, JSON.stringify(body, null, 2));
   const log: SmsLog = { request, status: res.status, response: body };
   const state = body?.messages?.[0]?.state ?? body?.state;
   if (!res.ok || (state && state !== "ACCEPTED")) {
