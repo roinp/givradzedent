@@ -31,7 +31,16 @@ function groupByCompany(expenses: Expense[], payments: ExpensePayment[]): Compan
     const key = supplierKey(supplier);
     let c = map.get(key);
     if (!c) {
-      c = { key, name: supplier?.trim() || null, expenses: [], payments: [], total: 0, paid: 0, remaining: 0, lastActivity: "" };
+      c = {
+        key,
+        name: supplier?.trim() || null,
+        expenses: [],
+        payments: [],
+        total: 0,
+        paid: 0,
+        remaining: 0,
+        lastActivity: "",
+      };
       map.set(key, c);
     }
     return c;
@@ -53,6 +62,29 @@ function groupByCompany(expenses: Expense[], payments: ExpensePayment[]): Compan
   for (const c of map.values()) c.remaining = c.total - c.paid;
   return [...map.values()].sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
+
+/** Row colours by payment status: paid off, partly paid, nothing paid yet. */
+const STATUS = {
+  paid: {
+    label: "გადახდილია",
+    row: "bg-emerald-50/50 hover:bg-emerald-50",
+    bar: "border-l-emerald-500",
+    pill: "bg-emerald-100 text-emerald-800",
+  },
+  partial: {
+    label: "ნაწილობრივ",
+    row: "bg-amber-50/50 hover:bg-amber-50",
+    bar: "border-l-amber-400",
+    pill: "bg-amber-100 text-amber-800",
+  },
+  unpaid: {
+    label: "გადაუხდელი",
+    row: "bg-red-50/50 hover:bg-red-50",
+    bar: "border-l-red-500",
+    pill: "bg-red-100 text-red-700",
+  },
+};
+const statusOf = (c: Company) => STATUS[c.remaining <= 0.005 ? "paid" : c.paid > 0.005 ? "partial" : "unpaid"];
 
 // SHA-256 of the expenses password (the password itself is not stored in code).
 const EXPENSES_PASSWORD_HASH = "3230c6c3d1e07097503bd32c96aa71d879831ab6a13f1e322383a76b4ab02911";
@@ -83,7 +115,11 @@ function Expenses() {
 
   const load = useCallback(async () => {
     const [ex, pay] = await Promise.all([
-      supabase.from("expenses").select("*").order("date", { ascending: false }).order("created_at", { ascending: false }),
+      supabase
+        .from("expenses")
+        .select("*")
+        .order("date", { ascending: false })
+        .order("created_at", { ascending: false }),
       supabase
         .from("expense_payments")
         .select("*")
@@ -183,6 +219,13 @@ function Expenses() {
           />
           მხოლოდ დავალიანებით
         </label>
+        <div className="ml-auto flex flex-wrap gap-2 text-xs">
+          {Object.values(STATUS).map((st) => (
+            <span key={st.label} className={`rounded-full px-2 py-0.5 font-medium ${st.pill}`}>
+              {st.label}
+            </span>
+          ))}
+        </div>
       </div>
 
       <div className="card overflow-hidden">
@@ -210,28 +253,32 @@ function Expenses() {
                   <th className="px-2 py-3" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y-2 divide-white">
                 {pageItems.map((c) => {
                   const open = expanded === c.key;
+                  const st = statusOf(c);
                   const shownExpenses = c.expenses.filter(matchesExpense);
                   const lastPayment = c.payments[0];
                   return (
                     <Fragment key={c.key}>
                       <tr
-                        className={`cursor-pointer align-top hover:bg-slate-50 ${open ? "bg-slate-50" : ""}`}
+                        className={`cursor-pointer align-top transition-colors ${st.row}`}
                         onClick={() => setExpanded(open ? null : c.key)}
                       >
-                        <td className="px-3 py-3 [overflow-wrap:anywhere]">
-                          <p className="font-medium">
+                        <td className={`border-l-4 px-3 py-3.5 [overflow-wrap:anywhere] ${st.bar}`}>
+                          <p className="text-base font-semibold">
                             <span className="mr-1.5 inline-block w-3 text-slate-400">{open ? "▾" : "▸"}</span>
                             🏢 {c.name ?? <span className="text-slate-400">კომპანიის გარეშე</span>}
                           </p>
-                          <p className="mt-0.5 pl-5 text-xs text-slate-500">
+                          <p className="mt-1 flex flex-wrap items-center gap-2 pl-5 text-xs text-slate-500">
+                            <span className={`rounded-full px-2 py-0.5 font-medium ${st.pill}`}>{st.label}</span>
                             {c.expenses.length} შესყიდვა · {c.payments.length} გადახდა
                           </p>
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-right font-medium">{formatPrice(c.total)}</td>
-                        <td className="whitespace-nowrap px-3 py-3 text-right text-emerald-700">{formatPrice(c.paid)}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-right text-emerald-700">
+                          {formatPrice(c.paid)}
+                        </td>
                         <td
                           className={`whitespace-nowrap px-3 py-3 text-right font-semibold ${
                             c.remaining > 0.005 ? "text-red-600" : "text-slate-400"
@@ -258,8 +305,8 @@ function Expenses() {
                         </td>
                       </tr>
                       {open && (
-                        <tr className="bg-slate-50/60">
-                          <td colSpan={6} className="px-3 pb-4 pt-1">
+                        <tr className={st.row.split(" ")[0]}>
+                          <td colSpan={6} className={`border-l-4 px-3 pb-4 pt-1 ${st.bar}`}>
                             <div className="grid gap-4 lg:grid-cols-2">
                               <section className="rounded-lg border border-slate-200 bg-white">
                                 <h3 className="border-b border-slate-100 px-3 py-2 text-xs font-semibold uppercase text-slate-500">
@@ -291,7 +338,10 @@ function Expenses() {
                                           )}
                                         </div>
                                         <span className="whitespace-nowrap font-medium">{formatPrice(totalOf(e))}</span>
-                                        <RowActions onEdit={() => setEditing({ expense: e })} onDelete={() => setDeleting(e)} />
+                                        <RowActions
+                                          onEdit={() => setEditing({ expense: e })}
+                                          onDelete={() => setDeleting(e)}
+                                        />
                                       </li>
                                     ))}
                                   </ul>
