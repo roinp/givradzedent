@@ -13,21 +13,26 @@ export const EXPENSE_CATEGORIES = ["ინვენტარი", "იმპლ�
 
 export default function ExpenseForm({
   expense,
+  defaultSupplier,
+  suppliers,
   onClose,
   onSaved,
 }: {
   expense?: Expense | null;
+  defaultSupplier?: string | null;
+  suppliers: string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const draft = useDraft(`expense:${expense?.id ?? "new"}`, {
+  const draft = useDraft(`expense:${expense?.id ?? `new:${defaultSupplier ?? ""}`}`, {
     date: expense?.date ?? todayISO(),
     item: expense?.item ?? "",
     category: expense?.category ?? "",
     unit_price: expense ? String(expense.unit_price) : "",
     quantity: expense ? String(expense.quantity) : "1",
-    supplier: expense?.supplier ?? "",
-    paid: expense ? String(expense.paid) : "",
+    supplier: expense?.supplier ?? defaultSupplier ?? "",
+    paid: "",
+    paid_date: todayISO(),
     notes: expense?.notes ?? "",
   });
   const { value: form, setValue: setForm } = draft;
@@ -36,7 +41,7 @@ export default function ExpenseForm({
 
   const round = (n: number) => Math.round(n * 100) / 100;
   const total = round((Number(form.unit_price) || 0) * (Number(form.quantity) || 0));
-  const remaining = round(total - (Number(form.paid) || 0));
+  const paidNow = Number(form.paid) || 0;
 
   const set =
     (k: keyof typeof form) =>
@@ -45,33 +50,61 @@ export default function ExpenseForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (remaining < 0) return setError("გადარიცხული თანხა აღემატება სულ თანხას");
     setBusy(true);
     setError(null);
+    // Reuse the existing spelling of the company so the purchase lands in the same group.
+    const typed = form.supplier.trim();
+    const supplier = suppliers.find((s) => s.toLowerCase() === typed.toLowerCase()) ?? (typed || null);
     const payload = {
       date: form.date,
       item: form.item.trim(),
       category: form.category.trim() || null,
       unit_price: Number(form.unit_price) || 0,
       quantity: Number(form.quantity) || 0,
-      supplier: form.supplier.trim() || null,
-      paid: Number(form.paid) || 0,
+      supplier,
       notes: form.notes.trim() || null,
     };
     const { error } = expense
       ? await supabase.from("expenses").update(payload).eq("id", expense.id)
       : await supabase.from("expenses").insert(payload);
+    if (error) {
+      setBusy(false);
+      return setError(error.message);
+    }
+    if (!expense && paidNow > 0) {
+      const res = await supabase
+        .from("expense_payments")
+        .insert({ supplier, date: form.paid_date, amount: paidNow, notes: payload.item });
+      if (res.error) {
+        setBusy(false);
+        return setError(`შესყიდვა შეინახა, მაგრამ გადახდა ვერა: ${res.error.message}`);
+      }
+    }
     setBusy(false);
-    if (error) return setError(error.message);
     draft.clear();
     onSaved();
   }
 
   return (
-    <Modal title={expense ? "ხარჯის რედაქტირება" : "ახალი ხარჯი"} onClose={onClose}>
+    <Modal title={expense ? "შესყიდვის რედაქტირება" : "ახალი შესყიდვა"} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <DraftNotice restored={draft.restored} onReset={draft.reset} />
         <div className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="label">კომპანია (საიდანაც იყიდეთ)</label>
+            <input
+              className="input"
+              list="expense-suppliers"
+              value={form.supplier}
+              onChange={set("supplier")}
+              placeholder="აირჩიეთ არსებული ან ჩაწერეთ ახალი"
+            />
+            <datalist id="expense-suppliers">
+              {suppliers.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
+          </div>
           <div className="sm:col-span-2">
             <label className="label">დასახელება *</label>
             <input
@@ -98,12 +131,8 @@ export default function ExpenseForm({
             </datalist>
           </div>
           <div>
-            <label className="label">თარიღი *</label>
+            <label className="label">შესყიდვის თარიღი *</label>
             <input type="date" required className="input" value={form.date} onChange={set("date")} />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="label">კომპანია (საიდანაც იყიდეთ)</label>
-            <input className="input" value={form.supplier} onChange={set("supplier")} />
           </div>
         </div>
 
@@ -137,30 +166,34 @@ export default function ExpenseForm({
               <div className="input bg-slate-100 font-semibold tabular-nums">{total.toFixed(2)}</div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label text-xs">გადარიცხული (₾)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                className="input"
-                value={form.paid}
-                onChange={set("paid")}
-                placeholder="0.00"
-              />
-            </div>
-            <div>
-              <label className="label text-xs">დარჩენილი (₾)</label>
-              <div
-                className={`input font-semibold tabular-nums ${
-                  remaining > 0 ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-700"
-                }`}
-              >
-                {remaining.toFixed(2)}
+          {expense ? (
+            <p className="text-xs text-slate-500">გადახდები იმართება კომპანიის გადახდების ისტორიიდან.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label text-xs">გადახდილი ახლა (₾)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="input"
+                  value={form.paid}
+                  onChange={set("paid")}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="label text-xs">გადახდის თარიღი</label>
+                <input
+                  type="date"
+                  required={paidNow > 0}
+                  className="input"
+                  value={form.paid_date}
+                  onChange={set("paid_date")}
+                />
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         <div>

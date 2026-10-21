@@ -7,8 +7,14 @@ export default function ConfirmDialog({
   message,
   onConfirm,
   onClose,
+  confirmLabel = "წაშლა",
+  busyLabel = "იშლება...",
+  cancelLabel = "გაუქმება",
 }: {
   message: string;
+  confirmLabel?: string;
+  busyLabel?: string;
+  cancelLabel?: string;
   onConfirm: () => Promise<void> | void;
   onClose: () => void;
 }) {
@@ -18,7 +24,7 @@ export default function ConfirmDialog({
       <p className="text-slate-700">{message}</p>
       <div className="mt-6 flex justify-end gap-2">
         <button className="btn-secondary" onClick={onClose}>
-          გაუქმება
+          {cancelLabel}
         </button>
         <button
           className="btn-danger"
@@ -29,7 +35,7 @@ export default function ConfirmDialog({
             setBusy(false);
           }}
         >
-          {busy ? "იშლება..." : "წაშლა"}
+          {busy ? busyLabel : confirmLabel}
         </button>
       </div>
     </Modal>

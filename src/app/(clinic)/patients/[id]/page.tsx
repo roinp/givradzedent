@@ -5,9 +5,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { age, formatDate, formatDateShort, formatPrice, formatTime, todayISO } from "@/lib/format";
-import type { Appointment, Patient, Treatment } from "@/lib/types";
+import type { Appointment, Patient, PatientPayment, Treatment } from "@/lib/types";
 import PatientForm from "@/components/PatientForm";
 import TreatmentForm from "@/components/TreatmentForm";
+import PatientPaymentForm from "@/components/PatientPaymentForm";
 import AppointmentForm from "@/components/AppointmentForm";
 import AppointmentDetails from "@/components/AppointmentDetails";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -21,6 +22,7 @@ export default function PatientProfilePage() {
   const [notFound, setNotFound] = useState(false);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [payments, setPayments] = useState<PatientPayment[] | null>(null);
 
   const [editingPatient, setEditingPatient] = useState(false);
   const [deletingPatient, setDeletingPatient] = useState(false);
@@ -30,9 +32,14 @@ export default function PatientProfilePage() {
   const [booking, setBooking] = useState(false);
   const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null);
   const [treatmentPage, setTreatmentPage] = useState(1);
+  const [paymentForm, setPaymentForm] = useState<{ payment: PatientPayment | null; treatmentId?: string } | null>(
+    null,
+  );
+  const [deletingPayment, setDeletingPayment] = useState<PatientPayment | null>(null);
+  const [paymentPage, setPaymentPage] = useState(1);
 
   const load = useCallback(async () => {
-    const [p, t, a] = await Promise.all([
+    const [p, t, a, pay] = await Promise.all([
       supabase.from("patients").select("*").eq("id", id).maybeSingle(),
       supabase
         .from("treatments")
@@ -47,11 +54,19 @@ export default function PatientProfilePage() {
         .gte("date", todayISO())
         .order("date")
         .order("time"),
+      supabase
+        .from("patient_payments")
+        .select("*")
+        .eq("patient_id", id)
+        .order("date", { ascending: false })
+        .order("created_at", { ascending: false }),
     ]);
     if (!p.data) setNotFound(true);
     setPatient(p.data);
     setTreatments(t.data ?? []);
     setAppointments(a.data ?? []);
+    // null = payments table not created yet (migration not run).
+    setPayments(pay.error ? null : (pay.data ?? []));
   }, [id]);
 
   useEffect(() => {
@@ -72,13 +87,22 @@ export default function PatientProfilePage() {
   if (!patient) return <p className="text-slate-400">იტვირთება...</p>;
 
   const total = treatments.reduce((s, t) => s + Number(t.price), 0);
-  const paid = treatments.reduce((s, t) => s + Number(t.paid ?? 0), 0);
+  // All payments count, including general/advance ones not tied to a treatment.
+  const paid = payments
+    ? payments.reduce((s, p) => s + Number(p.amount), 0)
+    : treatments.reduce((s, t) => s + Number(t.paid ?? 0), 0);
   const remaining = total - paid;
   const {
     pageItems: pageTreatments,
     pageCount: treatmentPages,
     currentPage: currentTreatmentPage,
   } = paginate(treatments, treatmentPage);
+  const {
+    pageItems: pagePayments,
+    pageCount: paymentPages,
+    currentPage: currentPaymentPage,
+  } = paginate(payments ?? [], paymentPage);
+  const treatmentById = new Map(treatments.map((t) => [t.id, t]));
   const years = age(patient.date_of_birth);
 
   return (
@@ -159,9 +183,13 @@ export default function PatientProfilePage() {
             <h2 className="font-semibold">მკურნალობის ისტორია</h2>
             <p className="text-xs text-slate-500">
               {treatments.length} ჩანაწერი · სულ {formatPrice(total)} · გადახდილი {formatPrice(paid)} ·{" "}
-              <span className={remaining > 0 ? "font-semibold text-red-600" : "text-emerald-700"}>
-                დარჩენილი {formatPrice(remaining)}
-              </span>
+              {remaining < 0 ? (
+                <span className="font-semibold text-emerald-700">ავანსი {formatPrice(-remaining)}</span>
+              ) : (
+                <span className={remaining > 0 ? "font-semibold text-red-600" : "text-emerald-700"}>
+                  დარჩენილი {formatPrice(remaining)}
+                </span>
+              )}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -225,7 +253,17 @@ export default function PatientProfilePage() {
                         {t.notes ?? "—"}
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 text-right font-medium">{formatPrice(t.price)}</td>
-                      <td className="whitespace-nowrap px-3 py-3 text-right text-emerald-700">{formatPrice(t.paid)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right text-emerald-700">
+                        {formatPrice(t.paid)}
+                        {payments && left > 0 && (
+                          <button
+                            className="mt-1 block w-full rounded px-1.5 py-0.5 text-right text-xs text-teal-700 hover:bg-teal-50"
+                            onClick={() => setPaymentForm({ payment: null, treatmentId: t.id })}
+                          >
+                            + გადახდა
+                          </button>
+                        )}
+                      </td>
                       <td
                         className={`whitespace-nowrap px-3 py-3 text-right font-semibold ${
                           left > 0 ? "text-red-600" : "text-slate-400"
@@ -280,6 +318,98 @@ export default function PatientProfilePage() {
         )}
       </section>
 
+      {/* Payment history */}
+      <section className="card">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 className="font-semibold">გადახდების ისტორია</h2>
+            {payments && (
+              <p className="text-xs text-slate-500">
+                {payments.length} გადახდა · სულ გადახდილი {formatPrice(paid)}
+                {payments[0] && ` · ბოლო: ${formatDateShort(payments[0].date)}`}
+              </p>
+            )}
+          </div>
+          {payments && (
+            <button className="btn-primary" onClick={() => setPaymentForm({ payment: null })}>
+              + გადახდის დამატება
+            </button>
+          )}
+        </div>
+        {!payments ? (
+          <p className="px-5 py-8 text-center text-sm text-red-600">
+            გადახდების ცხრილი ვერ ჩაიტვირთა. გაუშვით <code>supabase/add_patient_payments.sql</code> Supabase-ის SQL
+            Editor-ში.
+          </p>
+        ) : payments.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-slate-400">გადახდები ჯერ არ არის</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm lg:min-w-0">
+              <thead className="bg-slate-50 text-left text-slate-500">
+                <tr>
+                  <th className="px-3 py-3 font-medium">თარიღი</th>
+                  <th className="px-3 py-3 text-right font-medium">თანხა</th>
+                  <th className="px-3 py-3 font-medium">ფორმა</th>
+                  <th className="px-3 py-3 font-medium">რისთვის</th>
+                  <th className="px-3 py-3 font-medium">შენიშვნა</th>
+                  <th className="px-2 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pagePayments.map((p) => {
+                  const t = p.treatment_id ? treatmentById.get(p.treatment_id) : null;
+                  return (
+                    <tr key={p.id} className="align-top hover:bg-slate-50">
+                      <td className="whitespace-nowrap px-3 py-3 tabular-nums">{formatDateShort(p.date)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right font-semibold text-emerald-700">
+                        {formatPrice(p.amount)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3 text-slate-600">{p.method ?? "—"}</td>
+                      <td className="px-3 py-3 [overflow-wrap:anywhere]">
+                        {t ? (
+                          <>
+                            {t.procedure}
+                            {t.tooth_number && <span className="text-slate-500"> · 🦷 {t.tooth_number}</span>}
+                            <span className="text-xs text-slate-400"> ({formatDateShort(t.date)})</span>
+                          </>
+                        ) : (
+                          <span className="text-slate-400">ზოგადი / წინასწარი</span>
+                        )}
+                      </td>
+                      <td className="whitespace-pre-wrap px-3 py-3 text-slate-600 [overflow-wrap:anywhere]">
+                        {p.notes ?? "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2 text-right">
+                        <button
+                          className="rounded px-1.5 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                          onClick={() => setPaymentForm({ payment: p })}
+                          title="რედაქტირება"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          className="rounded px-1.5 py-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                          onClick={() => setDeletingPayment(p)}
+                          title="წაშლა"
+                        >
+                          🗑
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {paymentPages > 1 && (
+          <div className="border-t border-slate-100 p-3">
+            <Pagination page={currentPaymentPage} pageCount={paymentPages} onChange={setPaymentPage} />
+          </div>
+        )}
+      </section>
+
       {editingPatient && (
         <PatientForm
           patient={patient}
@@ -311,9 +441,36 @@ export default function PatientProfilePage() {
           }}
         />
       )}
+      {paymentForm && (
+        <PatientPaymentForm
+          patientId={patient.id}
+          treatments={treatments}
+          payment={paymentForm.payment}
+          defaultTreatmentId={paymentForm.treatmentId}
+          patientRemaining={remaining}
+          onClose={() => setPaymentForm(null)}
+          onSaved={() => {
+            setPaymentForm(null);
+            load();
+          }}
+        />
+      )}
+      {deletingPayment && (
+        <ConfirmDialog
+          message={`წაიშალოს გადახდა ${formatPrice(deletingPayment.amount)} (${formatDateShort(deletingPayment.date)})?`}
+          onClose={() => setDeletingPayment(null)}
+          onConfirm={async () => {
+            await supabase.from("patient_payments").delete().eq("id", deletingPayment.id);
+            setDeletingPayment(null);
+            load();
+          }}
+        />
+      )}
       {deletingTreatment && (
         <ConfirmDialog
-          message={`წაიშალოს ჩანაწერი „${deletingTreatment.procedure}"?`}
+          message={`წაიშალოს ჩანაწერი „${deletingTreatment.procedure}"?${
+            Number(deletingTreatment.paid) > 0 ? " მისი გადახდები დარჩება ისტორიაში როგორც ზოგადი გადახდა." : ""
+          }`}
           onClose={() => setDeletingTreatment(null)}
           onConfirm={async () => {
             await supabase.from("treatments").delete().eq("id", deletingTreatment.id);

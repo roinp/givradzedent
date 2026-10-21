@@ -60,3 +60,21 @@ export type Expense = {
   paid: number;
   notes: string | null;
 };
+
+export type PatientPayment = {
+  id: string;
+  patient_id: string;
+  treatment_id: string | null;
+  date: string;
+  amount: number;
+  method: string | null;
+  notes: string | null;
+};
+
+export type ExpensePayment = {
+  id: string;
+  supplier: string | null;
+  date: string;
+  amount: number;
+  notes: string | null;
+};

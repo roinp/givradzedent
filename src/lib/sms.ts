@@ -33,6 +33,11 @@ export function visitMessage(v: VisitForSms) {
   return `მოგესალმებით! თქვენი ვიზიტი${doctor} ჩანიშნულია, ${formatWhen(v.date, v.time)}.\nმისამართი: ${CLINIC_ADDRESS}.`;
 }
 
+export function cancelMessage(v: VisitForSms) {
+  const doctor = v.doctors?.name ? ` ${withCase(v.doctors.name)}` : "";
+  return `თქვენი ვიზიტი${doctor} გაუქმებულია.`;
+}
+
 /** Georgian mobile numbers only: returns 9 digits starting with 5, or null. */
 export function normalizePhone(phone: string | null | undefined) {
   const digits = (phone ?? "").replace(/\D/g, "").replace(/^(00)?995/, "");

@@ -9,6 +9,7 @@ import type { Treatment } from "@/lib/types";
 import Modal from "./Modal";
 import ErrorText from "./ErrorText";
 import DraftNotice from "./DraftNotice";
+import { PAYMENT_METHODS } from "./PatientPaymentForm";
 
 export default function TreatmentForm({
   patientId,
@@ -29,12 +30,16 @@ export default function TreatmentForm({
     tooth_number: treatment?.tooth_number ?? "",
     notes: treatment?.notes ?? "",
     price: treatment ? String(treatment.price) : "",
-    paid: treatment ? String(treatment.paid ?? 0) : "",
+    paid: "",
+    paid_date: todayISO(),
+    method: PAYMENT_METHODS[0],
   });
   const { value: form, setValue: setForm } = draft;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const remaining = Math.round(((Number(form.price) || 0) - (Number(form.paid) || 0)) * 100) / 100;
+  // For an existing treatment "paid" comes from its payment history; for a new one it's the payment made now.
+  const paid = treatment ? Number(treatment.paid ?? 0) : Number(form.paid) || 0;
+  const remaining = Math.round(((Number(form.price) || 0) - paid) * 100) / 100;
 
   const set =
     (k: keyof typeof form) =>
@@ -43,7 +48,12 @@ export default function TreatmentForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (remaining < 0) return setError("გადახდილი თანხა აღემატება სულ გადასახდელს");
+    if (remaining < 0)
+      return setError(
+        treatment
+          ? "ფასი ნაკლებია უკვე გადახდილ თანხაზე — ჯერ შეცვალეთ გადახდების ისტორია"
+          : "გადახდილი თანხა აღემატება სულ გადასახდელს",
+      );
     setBusy(true);
     setError(null);
     const payload = {
@@ -54,13 +64,28 @@ export default function TreatmentForm({
       tooth_number: form.tooth_number.trim() || null,
       notes: form.notes.trim() || null,
       price: Number(form.price) || 0,
-      paid: Number(form.paid) || 0,
     };
-    const { error } = treatment
-      ? await supabase.from("treatments").update(payload).eq("id", treatment.id)
-      : await supabase.from("treatments").insert(payload);
+    const { data, error } = treatment
+      ? await supabase.from("treatments").update(payload).eq("id", treatment.id).select("id").single()
+      : await supabase.from("treatments").insert(payload).select("id").single();
+    if (error) {
+      setBusy(false);
+      return setError(error.message);
+    }
+    if (!treatment && paid > 0) {
+      const res = await supabase.from("patient_payments").insert({
+        patient_id: patientId,
+        treatment_id: data.id,
+        date: form.paid_date,
+        amount: paid,
+        method: form.method,
+      });
+      if (res.error) {
+        setBusy(false);
+        return setError(`მკურნალობა შეინახა, მაგრამ გადახდა ვერა: ${res.error.message}`);
+      }
+    }
     setBusy(false);
-    if (error) return setError(error.message);
     draft.clear();
     onSaved();
   }
@@ -114,16 +139,20 @@ export default function TreatmentForm({
             />
           </div>
           <div>
-            <label className="label text-xs">გადახდილი </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              className="input"
-              value={form.paid}
-              onChange={set("paid")}
-              placeholder="0.00"
-            />
+            <label className="label text-xs">{treatment ? "გადახდილი" : "გადახდილი ახლა"}</label>
+            {treatment ? (
+              <div className="input bg-slate-100 tabular-nums">{paid.toFixed(2)}</div>
+            ) : (
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="input"
+                value={form.paid}
+                onChange={set("paid")}
+                placeholder="0.00"
+              />
+            )}
           </div>
           <div>
             <label className="label text-xs">დარჩენილი</label>
@@ -135,6 +164,28 @@ export default function TreatmentForm({
               {remaining.toFixed(2)}
             </div>
           </div>
+          {treatment ? (
+            <p className="col-span-3 text-xs text-slate-500">გადახდები იმართება პაციენტის გადახდების ისტორიიდან.</p>
+          ) : (
+            Number(form.paid) > 0 && (
+              <>
+                <div>
+                  <label className="label text-xs">გადახდის თარიღი</label>
+                  <input type="date" required className="input" value={form.paid_date} onChange={set("paid_date")} />
+                </div>
+                <div className="col-span-2">
+                  <label className="label text-xs">გადახდის ფორმა</label>
+                  <select className="input" value={form.method} onChange={set("method")}>
+                    {PAYMENT_METHODS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )
+          )}
         </div>
         <div>
           <label className="label">შენიშვნები</label>

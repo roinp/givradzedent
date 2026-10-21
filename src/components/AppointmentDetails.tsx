@@ -9,7 +9,7 @@ import Modal from "./Modal";
 import AppointmentForm from "./AppointmentForm";
 import ConfirmDialog from "./ConfirmDialog";
 
-/** Details modal for an appointment, with edit and delete actions. */
+/** Details modal for an appointment, with edit and cancel actions. */
 export default function AppointmentDetails({
   appointment,
   onClose,
@@ -19,7 +19,7 @@ export default function AppointmentDetails({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const [mode, setMode] = useState<"view" | "edit" | "delete">("view");
+  const [mode, setMode] = useState<"view" | "edit" | "cancel">("view");
 
   if (mode === "edit") {
     return (
@@ -34,13 +34,17 @@ export default function AppointmentDetails({
     );
   }
 
-  if (mode === "delete") {
+  if (mode === "cancel") {
     return (
       <ConfirmDialog
-        message="ნამდვილად გსურთ ამ ვიზიტის წაშლა?"
+        message="ნამდვილად გსურთ ამ ვიზიტის გაუქმება? პაციენტს გაეგზავნება SMS."
+        confirmLabel="ვიზიტის გაუქმება"
+        busyLabel="უქმდება..."
+        cancelLabel="უკან"
         onClose={() => setMode("view")}
         onConfirm={async () => {
-          await supabase.from("appointments").delete().eq("id", appointment.id);
+          const error = await cancelVisit(appointment.id);
+          if (error) window.alert(error);
           onChanged();
           onClose();
         }}
@@ -78,8 +82,8 @@ export default function AppointmentDetails({
         ))}
       </dl>
       <div className="mt-6 flex flex-wrap justify-end gap-2">
-        <button className="btn-secondary text-red-600" onClick={() => setMode("delete")}>
-          წაშლა
+        <button className="btn-secondary text-red-600" onClick={() => setMode("cancel")}>
+          ვიზიტის გაუქმება
         </button>
         <button className="btn-primary" onClick={() => setMode("edit")}>
           რედაქტირება
@@ -87,4 +91,24 @@ export default function AppointmentDetails({
       </div>
     </Modal>
   );
+}
+
+/** Deletes the visit on the server, which texts the patient 5 seconds later. Returns a message to show, if any. */
+async function cancelVisit(appointmentId: string) {
+  const { data } = await supabase.auth.getSession();
+  try {
+    const res = await fetch("/api/sms/cancel", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${data.session?.access_token ?? ""}`,
+      },
+      body: JSON.stringify({ appointmentId }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) return `ვიზიტი ვერ გაუქმდა: ${body?.error ?? `შეცდომა ${res.status}`}`;
+    return body?.warning ? `ვიზიტი გაუქმდა. ${body.warning}` : null;
+  } catch {
+    return "სერვერთან კავშირი ვერ დამყარდა";
+  }
 }
