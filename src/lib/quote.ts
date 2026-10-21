@@ -1,12 +1,17 @@
 import { CLINIC_BRAND } from "@/lib/medicalCard";
 
-export type Row = { name: string; qty: string; price: string };
+/** `patient`, `discount` (%) and `paid` are only used by lab orders, where each row belongs to its own patient. */
+export type Row = { name: string; qty: string; price: string; patient?: string; discount?: string; paid?: string };
 
 export const emptyRow = (): Row => ({ name: "", qty: "", price: "" });
 
 /** Empty quantity counts as 1. */
 export const qtyOf = (r: Row) => (r.qty.trim() === "" ? 1 : Number(r.qty) || 0);
-export const rowTotal = (r: Row) => qtyOf(r) * (Number(r.price) || 0);
+export const rowGross = (r: Row) => qtyOf(r) * (Number(r.price) || 0);
+export const rowPercent = (r: Row) => Math.min(100, Math.max(0, Number(r.discount) || 0));
+/** Row sum after its own % discount. */
+export const rowTotal = (r: Row) => Math.round(rowGross(r) * (100 - rowPercent(r))) / 100;
+export const rowPaid = (r: Row) => Number(r.paid) || 0;
 
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -18,10 +23,28 @@ export type Quote = {
   percent: number;
   discountAmount: number;
   total: number;
+  paid: number;
+  remaining: number;
+};
+
+export type QuoteLabels = {
+  title: string;
+  itemHeader: string;
+  note: string | null;
+  patientColumn?: boolean;
+  discountColumn?: boolean;
+  paidColumn?: boolean;
+  noSignatures?: boolean;
+};
+
+const DEFAULT_LABELS: QuoteLabels = {
+  title: "მკურნალობის ხარჯთაღრიცხვა",
+  itemHeader: "მკურნალობა / მომსახურება",
+  note: "ხარჯთაღრიცხვა წინასწარია და შეიძლება შეიცვალოს მკურნალობის მიმდინარეობისას.",
 };
 
 /** A4 cost-estimate page for the patient. */
-export function buildQuoteHtml(q: Quote) {
+export function buildQuoteHtml(q: Quote, labels: QuoteLabels = DEFAULT_LABELS) {
   const money = (n: number) => `${n.toFixed(2)} ₾`;
   const today = new Date();
   const date = `${String(today.getDate()).padStart(2, "0")}.${String(today.getMonth() + 1).padStart(2, "0")}.${today.getFullYear()}`;
@@ -29,15 +52,18 @@ export function buildQuoteHtml(q: Quote) {
     .map(
       (r, i) => `<tr>
         <td class="c">${i + 1}</td>
+        ${labels.patientColumn ? `<td>${escapeHtml(r.patient?.trim() || "—")}</td>` : ""}
         <td>${escapeHtml(r.name || "—")}</td>
         <td class="c">${qtyOf(r)}</td>
         <td class="r">${money(Number(r.price) || 0)}</td>
+        ${labels.discountColumn ? `<td class="c">${rowPercent(r) ? `${rowPercent(r)}%` : "—"}</td>` : ""}
         <td class="r">${money(rowTotal(r))}</td>
+        ${labels.paidColumn ? `<td class="r">${money(rowPaid(r))}</td>` : ""}
       </tr>`,
     )
     .join("");
 
-  return `<!doctype html><html lang="ka"><head><meta charset="utf-8"><title>ხარჯთაღრიცხვა</title>
+  return `<!doctype html><html lang="ka"><head><meta charset="utf-8"><title>${escapeHtml(labels.title)}</title>
 <style>
   @page { size: A4; margin: 18mm 16mm; }
   body { font-family: Sylfaen, "Noto Sans Georgian", "DejaVu Sans", sans-serif; font-size: 11pt; color: #000; margin: 0; }
@@ -61,19 +87,20 @@ export function buildQuoteHtml(q: Quote) {
     <div><div class="brand">🦷 ${escapeHtml(CLINIC_BRAND)}</div><div class="sub">სტომატოლოგიური კლინიკა</div></div>
     <div class="sub">თარიღი: ${date}</div>
   </div>
-  <h1>მკურნალობის ხარჯთაღრიცხვა</h1>
-  <div class="meta">პაციენტი: <b>${q.patient ? escapeHtml(q.patient) : "______________________________"}</b></div>
+  <h1>${escapeHtml(labels.title)}</h1>
+  ${labels.patientColumn ? "" : `<div class="meta">პაციენტი: <b>${q.patient ? escapeHtml(q.patient) : "______________________________"}</b></div>`}
   <table>
-    <thead><tr><th class="c" style="width:7%">№</th><th>მკურნალობა / მომსახურება</th><th class="c" style="width:12%">რაოდენობა</th><th class="r" style="width:16%">ფასი</th><th class="r" style="width:17%">ჯამი</th></tr></thead>
+    <thead><tr><th class="c" style="width:7%">№</th>${labels.patientColumn ? '<th style="width:24%">პაციენტი</th>' : ""}<th>${escapeHtml(labels.itemHeader)}</th><th class="c" style="width:12%">რაოდენობა</th><th class="r" style="width:16%">ფასი</th>${labels.discountColumn ? '<th class="c" style="width:10%">ფასდ.</th>' : ""}<th class="r" style="width:17%">ჯამი</th>${labels.paidColumn ? '<th class="r" style="width:16%">გადახდილი</th>' : ""}</tr></thead>
     <tbody>${rows}</tbody>
   </table>
   <table class="totals">
     <tr><td>ჯამი</td><td class="r">${money(q.subtotal)}</td></tr>
-    ${q.percent > 0 ? `<tr class="disc"><td>ფასდაკლება (${q.percent}%)</td><td class="r">−${money(q.discountAmount)}</td></tr>` : ""}
+    ${q.discountAmount > 0 ? `<tr class="disc"><td>ფასდაკლება${q.percent > 0 ? ` (${q.percent}%)` : ""}</td><td class="r">−${money(q.discountAmount)}</td></tr>` : ""}
     <tr class="final"><td>გადასახდელი</td><td class="r">${money(q.total)}</td></tr>
+    ${labels.paidColumn ? `<tr><td>გადახდილი</td><td class="r">${money(q.paid)}</td></tr><tr class="disc"><td><b>დარჩენილი</b></td><td class="r"><b>${money(q.remaining)}</b></td></tr>` : ""}
   </table>
-  <p class="note">ხარჯთაღრიცხვა წინასწარია და შეიძლება შეიცვალოს მკურნალობის მიმდინარეობისას.</p>
-  <div class="sign"><span>ექიმი: ____________________</span><span>პაციენტი: ____________________</span></div>
+  ${labels.note ? `<p class="note">${escapeHtml(labels.note)}</p>` : ""}
+  ${labels.noSignatures ? "" : '<div class="sign"><span>ექიმი: ____________________</span><span>პაციენტი: ____________________</span></div>'}
 </body></html>`;
 }
 
@@ -81,9 +108,13 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Totals for a calculation; rows without a name or price are left out. */
 export function computeQuote(patient: string, discount: string | number, rows: Row[]): Quote {
-  const used = rows.filter((r) => r.name.trim() || Number(r.price));
-  const subtotal = round2(used.reduce((s, r) => s + rowTotal(r), 0));
+  const used = rows.filter((r) => r.name.trim() || r.patient?.trim() || Number(r.price) || rowPaid(r));
+  // Subtotal is before any discount; per-row discounts come first, then the overall %.
+  const subtotal = round2(used.reduce((s, r) => s + rowGross(r), 0));
+  const afterRows = round2(used.reduce((s, r) => s + rowTotal(r), 0));
   const percent = Math.min(100, Math.max(0, Number(discount) || 0));
-  const discountAmount = round2((subtotal * percent) / 100);
-  return { patient: patient.trim(), rows: used, subtotal, percent, discountAmount, total: round2(subtotal - discountAmount) };
+  const total = round2(afterRows - (afterRows * percent) / 100);
+  const discountAmount = round2(subtotal - total);
+  const paid = round2(used.reduce((s, r) => s + rowPaid(r), 0));
+  return { patient: patient.trim(), rows: used, subtotal, percent, discountAmount, total, paid, remaining: round2(total - paid) };
 }

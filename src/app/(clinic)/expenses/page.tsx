@@ -9,6 +9,7 @@ import ExpensePaymentForm from "@/components/ExpensePaymentForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Pagination, { paginate } from "@/components/Pagination";
 import PasswordGate from "@/components/PasswordGate";
+import CalculatorModal from "@/components/CalculatorModal";
 
 const totalOf = (e: Expense) => Number(e.unit_price) * Number(e.quantity);
 const supplierKey = (s: string | null) => (s ?? "").trim().toLowerCase();
@@ -78,6 +79,7 @@ function Expenses() {
   const [paying, setPaying] = useState<{ company: Company; payment: ExpensePayment | null } | null>(null);
   const [deleting, setDeleting] = useState<Expense | null>(null);
   const [deletingPayment, setDeletingPayment] = useState<ExpensePayment | null>(null);
+  const [labOpen, setLabOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [ex, pay] = await Promise.all([
@@ -124,9 +126,14 @@ function Expenses() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">ხარჯები</h1>
-        <button className="btn-primary" onClick={() => setEditing({ expense: null })}>
-          + ახალი შესყიდვა
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-secondary" onClick={() => setLabOpen(true)}>
+            🧪 ლაბორატორიებისთვის
+          </button>
+          <button className="btn-primary" onClick={() => setEditing({ expense: null })}>
+            + ახალი შესყიდვა
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -353,6 +360,7 @@ function Expenses() {
         }}
       />
 
+      {labOpen && <CalculatorModal kind="lab" onClose={() => setLabOpen(false)} />}
       {editing && (
         <ExpenseForm
           expense={editing.expense}

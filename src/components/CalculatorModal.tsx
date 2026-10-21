@@ -4,7 +4,16 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatDateShort, formatPrice } from "@/lib/format";
 import { useDraft } from "@/lib/useDraft";
-import { buildQuoteHtml, computeQuote, emptyRow, rowTotal, type Quote, type Row } from "@/lib/quote";
+import {
+  buildQuoteHtml,
+  computeQuote,
+  emptyRow,
+  rowPaid,
+  rowTotal,
+  type Quote,
+  type QuoteLabels,
+  type Row,
+} from "@/lib/quote";
 import Modal from "./Modal";
 import ErrorText from "./ErrorText";
 
@@ -17,11 +26,56 @@ type SavedCalc = {
   updated_at: string;
 };
 
-const blank = () => ({ savedId: "", patient: "", discount: "", rows: [emptyRow()] });
+const blank = () => ({
+  savedId: "",
+  patient: "",
+  discount: "",
+  rows: [emptyRow()],
+});
+
+/** The same calculator serves clinic estimates and lab orders; each keeps its own table and history. */
+const KINDS = {
+  calc: {
+    table: "calculations",
+    sql: "supabase/add_calculations.sql",
+    draftKey: "calculator",
+    title: "🧮 კალკულაცია",
+    savedTitle: "📂 შენახული კალკულაციები",
+    backLabel: "← კალკულაცია",
+    newLabel: "ახალი კალკულაცია",
+    emptySaved: "შენახული კალკულაციები ჯერ არ არის",
+    itemPlaceholder: "მკურნალობა",
+    rowPatient: false,
+    print: undefined as QuoteLabels | undefined,
+  },
+  lab: {
+    table: "lab_calculations",
+    sql: "supabase/add_lab_calculations.sql",
+    draftKey: "lab-calculator",
+    title: "🧪 ლაბორატორიებისთვის",
+    savedTitle: "📂 ლაბორატორიის ისტორია",
+    backLabel: "← ლაბორატორია",
+    newLabel: "ახალი ჩანაწერი",
+    emptySaved: "შენახული ჩანაწერები ჯერ არ არის",
+    itemPlaceholder: "სამუშაო",
+    rowPatient: true,
+    print: {
+      title: "ლაბორატორიული სამუშაოების ხარჯთაღრიცხვა",
+      itemHeader: "სამუშაო / მომსახურება",
+      note: null,
+      patientColumn: true,
+      discountColumn: true,
+      paidColumn: true,
+      noSignatures: true,
+    } as QuoteLabels | undefined,
+  },
+};
+export type CalcKind = keyof typeof KINDS;
 
 /** Price calculator (treatments × quantity × price, minus a % discount) with saving and printing. */
-export default function CalculatorModal({ onClose }: { onClose: () => void }) {
-  const draft = useDraft("calculator", blank());
+export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: () => void; kind?: CalcKind }) {
+  const k = KINDS[kind];
+  const draft = useDraft(k.draftKey, blank());
   const { value, setValue } = draft;
   const [view, setView] = useState<"edit" | "saved">("edit");
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -46,10 +100,16 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
   }, []);
 
   const setRow = (i: number, patch: Partial<Row>) =>
-    setValue({ ...value, rows: value.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
+    setValue({
+      ...value,
+      rows: value.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)),
+    });
   const addRow = () => setValue({ ...value, rows: [...value.rows, emptyRow()] });
   const removeRow = (i: number) =>
-    setValue({ ...value, rows: value.rows.length > 1 ? value.rows.filter((_, j) => j !== i) : [emptyRow()] });
+    setValue({
+      ...value,
+      rows: value.rows.length > 1 ? value.rows.filter((_, j) => j !== i) : [emptyRow()],
+    });
 
   const quote = computeQuote(value.patient, value.discount, value.rows);
   const isSaved = !!value.savedId && savedJson === JSON.stringify(value);
@@ -58,15 +118,16 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     const payload = {
-      patient_name: quote.patient || null,
+      // Lab orders keep the patient on each row; the list of names makes history searchable.
+      patient_name: (k.rowPatient ? rowPatients(quote.rows) : quote.patient) || null,
       discount: quote.percent,
       rows: quote.rows,
       total: quote.total,
       updated_at: new Date().toISOString(),
     };
     const res = value.savedId
-      ? await supabase.from("calculations").update(payload).eq("id", value.savedId).select("id").single()
-      : await supabase.from("calculations").insert(payload).select("id").single();
+      ? await supabase.from(k.table).update(payload).eq("id", value.savedId).select("id").single()
+      : await supabase.from(k.table).insert(payload).select("id").single();
     setBusy(false);
     if (res.error) return setError(res.error.message);
     const next = { ...value, savedId: res.data.id };
@@ -95,8 +156,9 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
 
   if (view === "saved") {
     return (
-      <Modal title="📂 შენახული კალკულაციები" onClose={onClose} wide>
+      <Modal title={k.savedTitle} onClose={onClose} wide>
         <SavedList
+          kind={kind}
           currentId={value.savedId}
           onOpen={open}
           onBack={() => setView("edit")}
@@ -112,7 +174,7 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal title="🧮 კალკულაცია" onClose={onClose} wide>
+    <Modal title={k.title} onClose={onClose} wide>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className="btn-secondary py-1.5" onClick={() => setView("saved")}>
@@ -122,43 +184,47 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
             + ახალი
           </button>
           <span className={`ml-auto text-sm ${isSaved ? "text-emerald-700" : "text-slate-400"}`}>
-            {isSaved ? "✓ შენახულია" : value.savedId ? "● შეუნახავი ცვლილებები" : "ახალი კალკულაცია"}
+            {isSaved ? "✓ შენახულია" : value.savedId ? "● შეუნახავი ცვლილებები" : k.newLabel}
           </span>
         </div>
 
-        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <div className="min-w-48 flex-1">
-            <label className="label">პაციენტი</label>
-            <input
-              className="input"
-              list="calc-patients"
-              placeholder="სახელი, გვარი"
-              value={value.patient}
-              onChange={(e) => setValue({ ...value, patient: e.target.value })}
-            />
-            <datalist id="calc-patients">
-              {patientNames.map((n, i) => (
-                <option key={i} value={n} />
-              ))}
-            </datalist>
-          </div>
-          <div>
-            <label className="label">ფასდაკლება</label>
-            <div className="relative w-32">
+        <datalist id="calc-patients">
+          {patientNames.map((n, i) => (
+            <option key={i} value={n} />
+          ))}
+        </datalist>
+        {!k.rowPatient && (
+          <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="min-w-48 flex-1">
+              <label className="label">პაციენტის სახელი, გვარი</label>
               <input
-                type="number"
-                min="0"
-                max="100"
-                step="any"
-                className="input pr-8 tabular-nums"
-                placeholder="0"
-                value={value.discount}
-                onChange={(e) => setValue({ ...value, discount: e.target.value })}
+                className="input"
+                list="calc-patients"
+                placeholder="სახელი, გვარი"
+                value={value.patient}
+                onChange={(e) => setValue({ ...value, patient: e.target.value })}
               />
-              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400">%</span>
+            </div>
+            <div>
+              <label className="label">ფასდაკლება</label>
+              <div className="relative w-32">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="any"
+                  className="input pr-8 tabular-nums"
+                  placeholder="0"
+                  value={value.discount}
+                  onChange={(e) => setValue({ ...value, discount: e.target.value })}
+                />
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400">
+                  %
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <datalist id="calc-treatments">
           {suggestions.map((s) => (
@@ -167,23 +233,45 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
         </datalist>
 
         <div>
-          <div className="hidden grid-cols-[1fr_80px_100px_100px_32px] gap-2 px-1 pb-1 text-xs font-medium text-slate-500 sm:grid">
+          <div
+            className={`hidden gap-2 px-1 pb-1 text-xs font-medium text-slate-500 sm:grid ${
+              k.rowPatient
+                ? "grid-cols-[1fr_1fr_60px_85px_70px_85px_85px_32px]"
+                : "grid-cols-[1fr_80px_100px_100px_32px]"
+            }`}
+          >
+            {k.rowPatient && <span>პაციენტის სახელი, გვარი</span>}
             <span>დასახელება</span>
             <span>რაოდენობა</span>
             <span>ფასი (₾)</span>
+            {k.rowPatient && <span>ფასდ. %</span>}
             <span className="text-right">ჯამი</span>
+            {k.rowPatient && <span>გადახდილი (₾)</span>}
             <span />
           </div>
           <div className="space-y-2">
             {value.rows.map((r, i) => (
               <div
                 key={i}
-                className="grid grid-cols-[1fr_1fr_1fr_32px] gap-2 rounded-lg border border-slate-200 p-2 sm:grid-cols-[1fr_80px_100px_100px_32px] sm:border-0 sm:p-0"
+                className={`grid gap-2 rounded-lg border border-slate-200 p-2 sm:border-0 sm:p-0 ${
+                  k.rowPatient
+                    ? "grid-cols-3 sm:grid-cols-[1fr_1fr_60px_85px_70px_85px_85px_32px]"
+                    : "grid-cols-[1fr_1fr_1fr_32px] sm:grid-cols-[1fr_80px_100px_100px_32px]"
+                }`}
               >
+                {k.rowPatient && (
+                  <input
+                    className="input col-span-3 sm:col-span-1"
+                    list="calc-patients"
+                    placeholder="სახელი, გვარი"
+                    value={r.patient ?? ""}
+                    onChange={(e) => setRow(i, { patient: e.target.value })}
+                  />
+                )}
                 <input
-                  className="input col-span-4 sm:col-span-1"
+                  className={`input sm:col-span-1 ${k.rowPatient ? "col-span-3" : "col-span-4"}`}
                   list="calc-treatments"
-                  placeholder="მკურნალობა"
+                  placeholder={k.itemPlaceholder}
                   value={r.name}
                   onChange={(e) => setRow(i, { name: e.target.value })}
                 />
@@ -213,9 +301,47 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
                     }
                   }}
                 />
+                {k.rowPatient && (
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="any"
+                      className="input pr-6 tabular-nums"
+                      placeholder="0"
+                      title="ფასდაკლება %"
+                      value={r.discount ?? ""}
+                      onChange={(e) => setRow(i, { discount: e.target.value })}
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-slate-400">
+                      %
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center justify-end rounded-lg bg-slate-50 px-2 text-sm font-semibold tabular-nums">
                   {rowTotal(r).toFixed(2)}
                 </div>
+                {k.rowPatient && (
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className={`input tabular-nums ${
+                      rowPaid(r) > 0 && rowPaid(r) >= rowTotal(r) ? "bg-emerald-50 text-emerald-700" : ""
+                    }`}
+                    placeholder="გადახდილი"
+                    title="გადახდილი (₾)"
+                    value={r.paid ?? ""}
+                    onChange={(e) => setRow(i, { paid: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && i === value.rows.length - 1) {
+                        e.preventDefault();
+                        addRow();
+                      }
+                    }}
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => removeRow(i)}
@@ -237,9 +363,9 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
             <span className="text-slate-500">ჯამი</span>
             <span className="tabular-nums">{formatPrice(quote.subtotal)}</span>
           </div>
-          {quote.percent > 0 && (
+          {quote.discountAmount > 0 && (
             <div className="flex justify-between text-red-600">
-              <span>ფასდაკლება ({quote.percent}%)</span>
+              <span>ფასდაკლება{quote.percent > 0 && ` (${quote.percent}%)`}</span>
               <span className="tabular-nums">−{formatPrice(quote.discountAmount)}</span>
             </div>
           )}
@@ -247,15 +373,23 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
             <span>გადასახდელი</span>
             <span className="tabular-nums text-teal-700">{formatPrice(quote.total)}</span>
           </div>
+          {k.rowPatient && (
+            <>
+              <div className="flex justify-between text-emerald-700">
+                <span>გადახდილი</span>
+                <span className="tabular-nums">{formatPrice(quote.paid)}</span>
+              </div>
+              <div
+                className={`flex justify-between font-semibold ${quote.remaining > 0 ? "text-red-600" : "text-slate-400"}`}
+              >
+                <span>დარჩენილი</span>
+                <span className="tabular-nums">{formatPrice(quote.remaining)}</span>
+              </div>
+            </>
+          )}
         </div>
 
-        <ErrorText
-          error={
-            error && /calculations/.test(error)
-              ? `${error} — გაუშვით supabase/add_calculations.sql Supabase-ში.`
-              : error
-          }
-        />
+        <ErrorText error={error && error.includes(k.table) ? `${error} — გაუშვით ${k.sql} Supabase-ში.` : error} />
 
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" className="btn-secondary mr-auto" onClick={onClose}>
@@ -276,7 +410,7 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
             type="button"
             className="btn-primary"
             disabled={quote.rows.length === 0}
-            onClick={() => printQuote(quote)}
+            onClick={() => printQuote(quote, k.print)}
           >
             🖨 ბეჭდვა
           </button>
@@ -287,11 +421,13 @@ export default function CalculatorModal({ onClose }: { onClose: () => void }) {
 }
 
 function SavedList({
+  kind,
   currentId,
   onOpen,
   onBack,
   onDeleted,
 }: {
+  kind: CalcKind;
   currentId: string;
   onOpen: (c: SavedCalc) => void;
   onBack: () => void;
@@ -301,21 +437,22 @@ function SavedList({
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const k = KINDS[kind];
 
   useEffect(() => {
     supabase
-      .from("calculations")
+      .from(k.table)
       .select("id, patient_name, discount, rows, total, updated_at")
       .order("updated_at", { ascending: false })
       .limit(300)
       .then(({ data, error }) => {
-        if (error) return setError(`${error.message} — გაუშვით supabase/add_calculations.sql Supabase-ში.`);
+        if (error) return setError(`${error.message} — გაუშვით ${k.sql} Supabase-ში.`);
         setItems(data ?? []);
       });
-  }, []);
+  }, [k]);
 
   async function remove(id: string) {
-    const { error } = await supabase.from("calculations").delete().eq("id", id);
+    const { error } = await supabase.from(k.table).delete().eq("id", id);
     setConfirmId(null);
     if (error) return setError(error.message);
     setItems((list) => (list ?? []).filter((c) => c.id !== id));
@@ -323,13 +460,18 @@ function SavedList({
   }
 
   const q = search.trim().toLowerCase();
-  const visible = (items ?? []).filter((c) => !q || (c.patient_name ?? "").toLowerCase().includes(q));
+  const visible = (items ?? []).filter(
+    (c) =>
+      !q ||
+      (c.patient_name ?? "").toLowerCase().includes(q) ||
+      c.rows.some((r) => (r.patient ?? "").toLowerCase().includes(q)),
+  );
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
         <button type="button" className="btn-secondary py-1.5" onClick={onBack}>
-          ← კალკულაცია
+          {k.backLabel}
         </button>
         <input
           className="input max-w-xs flex-1"
@@ -341,9 +483,7 @@ function SavedList({
       <ErrorText error={error} />
       {!items && !error && <p className="text-sm text-slate-400">იტვირთება...</p>}
       {items && visible.length === 0 && (
-        <p className="py-6 text-center text-sm text-slate-400">
-          {items.length ? "ვერ მოიძებნა" : "შენახული კალკულაციები ჯერ არ არის"}
-        </p>
+        <p className="py-6 text-center text-sm text-slate-400">{items.length ? "ვერ მოიძებნა" : k.emptySaved}</p>
       )}
       <div className="max-h-[60vh] divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
         {visible.map((c) => (
@@ -352,13 +492,16 @@ function SavedList({
             className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 ${c.id === currentId ? "bg-teal-50" : ""}`}
           >
             <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onOpen(c)}>
-              <p className="truncate font-medium">{c.patient_name || "უსახელო"}</p>
+              <p className="truncate font-medium">{k.rowPatient ? "პაციენტების სია" : c.patient_name || "უსახელო"}</p>
               <p className="text-xs text-slate-500">
                 {formatDateShort(c.updated_at.slice(0, 10))} · {c.rows.length} პოზიცია
                 {c.discount > 0 && ` · −${Number(c.discount)}%`}
               </p>
             </button>
-            <span className="font-semibold tabular-nums text-teal-700">{formatPrice(c.total)}</span>
+            <span className="text-right">
+              <span className="block font-semibold tabular-nums text-teal-700">{formatPrice(c.total)}</span>
+              {k.rowPatient && <RemainingBadge calc={c} />}
+            </span>
             {confirmId === c.id ? (
               <span className="flex items-center gap-2 text-sm">
                 <span className="text-red-600">წაიშალოს?</span>
@@ -377,7 +520,7 @@ function SavedList({
                 <button
                   className="btn-secondary px-2.5 py-1"
                   title="ბეჭდვა"
-                  onClick={() => printQuote(computeQuote(c.patient_name ?? "", c.discount, c.rows))}
+                  onClick={() => printQuote(computeQuote(c.patient_name ?? "", c.discount, c.rows), k.print)}
                 >
                   🖨
                 </button>
@@ -397,9 +540,23 @@ function SavedList({
   );
 }
 
+function RemainingBadge({ calc }: { calc: SavedCalc }) {
+  const { remaining } = computeQuote("", calc.discount, calc.rows);
+  return remaining > 0 ? (
+    <span className="block text-xs tabular-nums text-red-600">დარჩ. {formatPrice(remaining)}</span>
+  ) : (
+    <span className="block text-xs text-emerald-700">✓ გადახდილია</span>
+  );
+}
+
+/** "ნინო ბერიძე, გიორგი კაპანაძე" — distinct patient names of lab rows. */
+function rowPatients(rows: Row[]) {
+  return [...new Set(rows.map((r) => r.patient?.trim()).filter(Boolean))].join(", ");
+}
+
 /** Prints the estimate through a hidden iframe (no new tab). */
-function printQuote(q: Quote) {
-  const html = buildQuoteHtml(q);
+function printQuote(q: Quote, labels?: QuoteLabels) {
+  const html = buildQuoteHtml(q, labels);
   const frame = document.createElement("iframe");
   frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
   document.body.appendChild(frame);
