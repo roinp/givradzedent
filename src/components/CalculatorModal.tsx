@@ -14,6 +14,7 @@ import {
   type QuoteLabels,
   type Row,
 } from "@/lib/quote";
+import { printHtml } from "@/lib/print";
 import Modal from "./Modal";
 import ErrorText from "./ErrorText";
 
@@ -556,18 +557,5 @@ function rowPatients(rows: Row[]) {
 
 /** Prints the estimate through a hidden iframe (no new tab). */
 function printQuote(q: Quote, labels?: QuoteLabels) {
-  const html = buildQuoteHtml(q, labels);
-  const frame = document.createElement("iframe");
-  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
-  document.body.appendChild(frame);
-  const doc = frame.contentDocument!;
-  doc.open();
-  doc.write(html);
-  doc.close();
-  // Give the fonts a moment to load, then print and clean up.
-  setTimeout(() => {
-    frame.contentWindow?.focus();
-    frame.contentWindow?.print();
-    setTimeout(() => frame.remove(), 1000);
-  }, 300);
+  printHtml(buildQuoteHtml(q, labels));
 }

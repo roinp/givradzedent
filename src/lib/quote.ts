@@ -1,4 +1,5 @@
 import { CLINIC_BRAND } from "@/lib/medicalCard";
+import { escapeHtml } from "@/lib/print";
 
 /** `patient`, `discount` (%) and `paid` are only used by lab orders, where each row belongs to its own patient. */
 export type Row = { name: string; qty: string; price: string; patient?: string; discount?: string; paid?: string };
@@ -13,8 +14,6 @@ export const rowPercent = (r: Row) => Math.min(100, Math.max(0, Number(r.discoun
 export const rowTotal = (r: Row) => Math.round(rowGross(r) * (100 - rowPercent(r))) / 100;
 export const rowPaid = (r: Row) => Number(r.paid) || 0;
 
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 export type Quote = {
   patient: string;

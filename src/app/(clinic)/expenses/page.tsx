@@ -10,6 +10,8 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import Pagination, { paginate } from "@/components/Pagination";
 import PasswordGate from "@/components/PasswordGate";
 import CalculatorModal from "@/components/CalculatorModal";
+import { printHtml } from "@/lib/print";
+import { buildSupplierStatementHtml } from "@/lib/supplierStatement";
 
 const totalOf = (e: Expense) => Number(e.unit_price) * Number(e.quantity);
 const supplierKey = (s: string | null) => (s ?? "").trim().toLowerCase();
@@ -301,6 +303,13 @@ function Expenses() {
                             onClick={() => setEditing({ expense: null, supplier: c.name })}
                           >
                             + შესყიდვა
+                          </button>
+                          <button
+                            className="ml-1 inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                            title="ბეჭდვა: შესყიდვები და გადახდები"
+                            onClick={() => printHtml(buildSupplierStatementHtml(c))}
+                          >
+                            <span className="text-base">🖨</span> ბეჭდვა
                           </button>
                         </td>
                       </tr>
