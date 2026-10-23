@@ -63,7 +63,7 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
           >
             ☰
           </button>
-          <span className="font-semibold">🦷 LIGHT DENT</span>
+          <span className="font-semibold">🦷 Z.GIVRADZE</span>
         </header>
         <main className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">{children}</main>
         {calcOpen && <CalculatorModal onClose={() => setCalcOpen(false)} />}

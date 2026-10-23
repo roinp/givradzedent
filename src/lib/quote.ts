@@ -1,8 +1,17 @@
 import { CLINIC_BRAND } from "@/lib/medicalCard";
 import { escapeHtml } from "@/lib/print";
+import { formatDateShort } from "@/lib/format";
 
-/** `patient`, `discount` (%) and `paid` are only used by lab orders, where each row belongs to its own patient. */
-export type Row = { name: string; qty: string; price: string; patient?: string; discount?: string; paid?: string };
+/** `date` (YYYY-MM-DD), `patient`, `discount` (%) and `paid` are only used by lab orders, where each row belongs to its own patient. */
+export type Row = {
+  name: string;
+  qty: string;
+  price: string;
+  date?: string;
+  patient?: string;
+  discount?: string;
+  paid?: string;
+};
 
 export const emptyRow = (): Row => ({ name: "", qty: "", price: "" });
 
@@ -30,6 +39,7 @@ export type QuoteLabels = {
   title: string;
   itemHeader: string;
   note: string | null;
+  dateColumn?: boolean;
   patientColumn?: boolean;
   discountColumn?: boolean;
   paidColumn?: boolean;
@@ -51,6 +61,7 @@ export function buildQuoteHtml(q: Quote, labels: QuoteLabels = DEFAULT_LABELS) {
     .map(
       (r, i) => `<tr>
         <td class="c">${i + 1}</td>
+        ${labels.dateColumn ? `<td class="c">${r.date ? formatDateShort(r.date) : "—"}</td>` : ""}
         ${labels.patientColumn ? `<td>${escapeHtml(r.patient?.trim() || "—")}</td>` : ""}
         <td>${escapeHtml(r.name || "—")}</td>
         <td class="c">${qtyOf(r)}</td>
@@ -89,7 +100,7 @@ export function buildQuoteHtml(q: Quote, labels: QuoteLabels = DEFAULT_LABELS) {
   <h1>${escapeHtml(labels.title)}</h1>
   ${labels.patientColumn ? "" : `<div class="meta">პაციენტი: <b>${q.patient ? escapeHtml(q.patient) : "______________________________"}</b></div>`}
   <table>
-    <thead><tr><th class="c" style="width:7%">№</th>${labels.patientColumn ? '<th style="width:24%">პაციენტი</th>' : ""}<th>${escapeHtml(labels.itemHeader)}</th><th class="c" style="width:12%">რაოდენობა</th><th class="r" style="width:16%">ფასი</th>${labels.discountColumn ? '<th class="c" style="width:10%">ფასდ.</th>' : ""}<th class="r" style="width:17%">ჯამი</th>${labels.paidColumn ? '<th class="r" style="width:16%">გადახდილი</th>' : ""}</tr></thead>
+    <thead><tr><th class="c" style="width:7%">№</th>${labels.dateColumn ? '<th class="c" style="width:12%">თარიღი</th>' : ""}${labels.patientColumn ? '<th style="width:24%">პაციენტი</th>' : ""}<th>${escapeHtml(labels.itemHeader)}</th><th class="c" style="width:12%">რაოდენობა</th><th class="r" style="width:16%">ფასი</th>${labels.discountColumn ? '<th class="c" style="width:10%">ფასდ.</th>' : ""}<th class="r" style="width:17%">ჯამი</th>${labels.paidColumn ? '<th class="r" style="width:16%">გადახდილი</th>' : ""}</tr></thead>
     <tbody>${rows}</tbody>
   </table>
   <table class="totals">

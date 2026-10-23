@@ -39,7 +39,7 @@ export default function LoginPage() {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-600 text-3xl">
             🦷
           </div>
-          <h1 className="mt-4 text-xl font-semibold">LIGHT DENT</h1>
+          <h1 className="mt-4 text-xl font-semibold">Z.GIVRADZE</h1>
           <p className="text-sm text-slate-500">თანამშრომლების შესვლა</p>
         </div>
         <div>

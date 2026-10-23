@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { formatDateShort, formatPrice } from "@/lib/format";
+import { formatDateShort, formatPrice, todayISO } from "@/lib/format";
 import { useDraft } from "@/lib/useDraft";
 import {
   buildQuoteHtml,
@@ -65,6 +65,7 @@ const KINDS = {
       itemHeader: "სამუშაო / მომსახურება",
       note: null,
       patientColumn: true,
+      dateColumn: true,
       discountColumn: true,
       paidColumn: true,
       noSignatures: true,
@@ -105,11 +106,12 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
       ...value,
       rows: value.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)),
     });
-  const addRow = () => setValue({ ...value, rows: [...value.rows, emptyRow()] });
+  const newRow = (): Row => (k.rowPatient ? { ...emptyRow(), date: todayISO() } : emptyRow());
+  const addRow = () => setValue({ ...value, rows: [...value.rows, newRow()] });
   const removeRow = (i: number) =>
     setValue({
       ...value,
-      rows: value.rows.length > 1 ? value.rows.filter((_, j) => j !== i) : [emptyRow()],
+      rows: value.rows.length > 1 ? value.rows.filter((_, j) => j !== i) : [newRow()],
     });
 
   const quote = computeQuote(value.patient, value.discount, value.rows);
@@ -175,7 +177,7 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
   }
 
   return (
-    <Modal title={k.title} onClose={onClose} wide>
+    <Modal title={k.title} onClose={onClose} wide={k.rowPatient ? "xl" : true}>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className="btn-secondary py-1.5" onClick={() => setView("saved")}>
@@ -234,126 +236,84 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
         </datalist>
 
         <div>
-          <div
-            className={`hidden gap-2 px-1 pb-1 text-xs font-medium text-slate-500 sm:grid ${
-              k.rowPatient
-                ? "grid-cols-[1fr_1fr_60px_85px_70px_85px_85px_32px]"
-                : "grid-cols-[1fr_80px_100px_100px_32px]"
-            }`}
-          >
-            {k.rowPatient && <span>პაციენტის სახელი, გვარი</span>}
-            <span>დასახელება</span>
-            <span>რაოდენობა</span>
-            <span>ფასი (₾)</span>
-            {k.rowPatient && <span>ფასდ. %</span>}
-            <span className="text-right">ჯამი</span>
-            {k.rowPatient && <span>გადახდილი (₾)</span>}
-            <span />
-          </div>
-          <div className="space-y-2">
-            {value.rows.map((r, i) => (
-              <div
-                key={i}
-                className={`grid gap-2 rounded-lg border border-slate-200 p-2 sm:border-0 sm:p-0 ${
-                  k.rowPatient
-                    ? "grid-cols-3 sm:grid-cols-[1fr_1fr_60px_85px_70px_85px_85px_32px]"
-                    : "grid-cols-[1fr_1fr_1fr_32px] sm:grid-cols-[1fr_80px_100px_100px_32px]"
-                }`}
-              >
-                {k.rowPatient && (
-                  <input
-                    className="input col-span-3 sm:col-span-1"
-                    list="calc-patients"
-                    placeholder="სახელი, გვარი"
-                    value={r.patient ?? ""}
-                    onChange={(e) => setRow(i, { patient: e.target.value })}
-                  />
-                )}
-                <input
-                  className={`input sm:col-span-1 ${k.rowPatient ? "col-span-3" : "col-span-4"}`}
-                  list="calc-treatments"
-                  placeholder={k.itemPlaceholder}
-                  value={r.name}
-                  onChange={(e) => setRow(i, { name: e.target.value })}
+          {k.rowPatient ? (
+            <div className="space-y-3">
+              {value.rows.map((r, i) => (
+                <LabRow
+                  key={i}
+                  index={i}
+                  row={r}
+                  itemPlaceholder={k.itemPlaceholder}
+                  onChange={(patch) => setRow(i, patch)}
+                  onRemove={() => removeRow(i)}
+                  onEnter={i === value.rows.length - 1 ? addRow : undefined}
                 />
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  className="input tabular-nums"
-                  placeholder="1"
-                  title="ცარიელი = 1"
-                  value={r.qty}
-                  onChange={(e) => setRow(i, { qty: e.target.value })}
-                />
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="input tabular-nums"
-                  placeholder="0.00"
-                  value={r.price}
-                  onChange={(e) => setRow(i, { price: e.target.value })}
-                  onKeyDown={(e) => {
-                    // Enter in the last price field adds a new row.
-                    if (e.key === "Enter" && i === value.rows.length - 1) {
-                      e.preventDefault();
-                      addRow();
-                    }
-                  }}
-                />
-                {k.rowPatient && (
-                  <div className="relative">
+              ))}
+            </div>
+          ) : (
+            <>
+              <div className="hidden grid-cols-[1fr_80px_100px_100px_32px] gap-2 px-1 pb-1 text-xs font-medium text-slate-500 sm:grid">
+                <span>დასახელება</span>
+                <span>რაოდენობა</span>
+                <span>ფასი (₾)</span>
+                <span className="text-right">ჯამი</span>
+                <span />
+              </div>
+              <div className="space-y-2">
+                {value.rows.map((r, i) => (
+                  <div
+                    key={i}
+                    className="grid grid-cols-[1fr_1fr_1fr_32px] gap-2 rounded-lg border border-slate-200 p-2 sm:grid-cols-[1fr_80px_100px_100px_32px] sm:border-0 sm:p-0"
+                  >
+                    <input
+                      className="input col-span-4 sm:col-span-1"
+                      list="calc-treatments"
+                      placeholder={k.itemPlaceholder}
+                      value={r.name}
+                      onChange={(e) => setRow(i, { name: e.target.value })}
+                    />
                     <input
                       type="number"
                       min="0"
-                      max="100"
                       step="any"
-                      className="input pr-6 tabular-nums"
-                      placeholder="0"
-                      title="ფასდაკლება %"
-                      value={r.discount ?? ""}
-                      onChange={(e) => setRow(i, { discount: e.target.value })}
+                      className="input tabular-nums"
+                      placeholder="1"
+                      title="ცარიელი = 1"
+                      value={r.qty}
+                      onChange={(e) => setRow(i, { qty: e.target.value })}
                     />
-                    <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-slate-400">
-                      %
-                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="input tabular-nums"
+                      placeholder="0.00"
+                      value={r.price}
+                      onChange={(e) => setRow(i, { price: e.target.value })}
+                      onKeyDown={(e) => {
+                        // Enter in the last price field adds a new row.
+                        if (e.key === "Enter" && i === value.rows.length - 1) {
+                          e.preventDefault();
+                          addRow();
+                        }
+                      }}
+                    />
+                    <div className="flex items-center justify-end rounded-lg bg-slate-50 px-2 text-sm font-semibold tabular-nums">
+                      {rowTotal(r).toFixed(2)}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeRow(i)}
+                      className="rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"
+                      title="წაშლა"
+                    >
+                      ✕
+                    </button>
                   </div>
-                )}
-                <div className="flex items-center justify-end rounded-lg bg-slate-50 px-2 text-sm font-semibold tabular-nums">
-                  {rowTotal(r).toFixed(2)}
-                </div>
-                {k.rowPatient && (
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className={`input tabular-nums ${
-                      rowPaid(r) > 0 && rowPaid(r) >= rowTotal(r) ? "bg-emerald-50 text-emerald-700" : ""
-                    }`}
-                    placeholder="გადახდილი"
-                    title="გადახდილი (₾)"
-                    value={r.paid ?? ""}
-                    onChange={(e) => setRow(i, { paid: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && i === value.rows.length - 1) {
-                        e.preventDefault();
-                        addRow();
-                      }
-                    }}
-                  />
-                )}
-                <button
-                  type="button"
-                  onClick={() => removeRow(i)}
-                  className="rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"
-                  title="წაშლა"
-                >
-                  ✕
-                </button>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
           <button type="button" className="btn-secondary mt-3" onClick={addRow}>
             + რიგის დამატება
           </button>
@@ -536,6 +496,158 @@ function SavedList({
             )}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** One lab order line as a card: date, patient and work on top, the money below. */
+function LabRow({
+  index,
+  row: r,
+  itemPlaceholder,
+  onChange,
+  onRemove,
+  onEnter,
+}: {
+  index: number;
+  row: Row;
+  itemPlaceholder: string;
+  onChange: (patch: Partial<Row>) => void;
+  onRemove: () => void;
+  onEnter?: () => void;
+}) {
+  const total = rowTotal(r);
+  const left = Math.round((total - rowPaid(r)) * 100) / 100;
+  const status =
+    total <= 0
+      ? "border-slate-200"
+      : left <= 0
+        ? "border-emerald-300 bg-emerald-50/40"
+        : rowPaid(r) > 0
+          ? "border-amber-300 bg-amber-50/40"
+          : "border-slate-200";
+  const field = "text-[11px] font-medium uppercase tracking-wide text-slate-500";
+  const enterAdds = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && onEnter) {
+      e.preventDefault();
+      onEnter();
+    }
+  };
+  return (
+    <div className={`rounded-xl border p-3 shadow-sm ${status}`}>
+      <div className="flex items-start gap-3">
+        <span className="mt-6 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-100 text-xs font-semibold text-teal-700">
+          {index + 1}
+        </span>
+        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-[150px_1fr_1fr]">
+          <label className="block">
+            <span className={field}>📅 თარიღი</span>
+            <input
+              type="date"
+              className="input mt-1"
+              value={r.date ?? ""}
+              onChange={(e) => onChange({ date: e.target.value })}
+            />
+          </label>
+          <label className="block">
+            <span className={field}>პაციენტის სახელი, გვარი</span>
+            <input
+              className="input mt-1"
+              list="calc-patients"
+              placeholder="სახელი, გვარი"
+              value={r.patient ?? ""}
+              onChange={(e) => onChange({ patient: e.target.value })}
+            />
+          </label>
+          <label className="block">
+            <span className={field}>დასახელება</span>
+            <input
+              className="input mt-1"
+              list="calc-treatments"
+              placeholder={itemPlaceholder}
+              value={r.name}
+              onChange={(e) => onChange({ name: e.target.value })}
+            />
+          </label>
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="mt-6 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+          title="წაშლა"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 sm:ml-10 sm:mr-10 sm:grid-cols-5">
+        <label className="block">
+          <span className={field}>რაოდენობა</span>
+          <input
+            type="number"
+            min="0"
+            step="any"
+            className="input mt-1 tabular-nums"
+            placeholder="1"
+            title="ცარიელი = 1"
+            value={r.qty}
+            onChange={(e) => onChange({ qty: e.target.value })}
+          />
+        </label>
+        <label className="block">
+          <span className={field}>ფასი (₾)</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            className="input mt-1 tabular-nums"
+            placeholder="0.00"
+            value={r.price}
+            onChange={(e) => onChange({ price: e.target.value })}
+          />
+        </label>
+        <label className="block">
+          <span className={field}>ფასდაკლება</span>
+          <div className="relative mt-1">
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="any"
+              className="input pr-7 tabular-nums"
+              placeholder="0"
+              value={r.discount ?? ""}
+              onChange={(e) => onChange({ discount: e.target.value })}
+            />
+            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-slate-400">
+              %
+            </span>
+          </div>
+        </label>
+        <label className="block">
+          <span className={field}>გადახდილი (₾)</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            className="input mt-1 tabular-nums"
+            placeholder="0.00"
+            value={r.paid ?? ""}
+            onChange={(e) => onChange({ paid: e.target.value })}
+            onKeyDown={enterAdds}
+          />
+        </label>
+        <div className="col-span-2 sm:col-span-1">
+          <span className={field}>ჯამი</span>
+          <div className="mt-1 rounded-lg bg-slate-100 px-3 py-2 text-right font-semibold tabular-nums">
+            {formatPrice(total)}
+          </div>
+          {total > 0 && (
+            <p className={`mt-1 text-right text-xs ${left > 0 ? "text-red-600" : "text-emerald-700"}`}>
+              {left > 0 ? `დარჩ. ${formatPrice(left)}` : "✓ გადახდილია"}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

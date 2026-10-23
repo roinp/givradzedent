@@ -11,7 +11,8 @@ export default function Modal({
   title: string;
   onClose: () => void;
   children: React.ReactNode;
-  wide?: boolean;
+  /** `true` for tables, `"xl"` for forms with many columns per row. */
+  wide?: boolean | "xl";
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -35,7 +36,7 @@ export default function Modal({
     >
       <div
         className={`max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-xl sm:rounded-2xl ${
-          wide ? "sm:max-w-2xl" : "sm:max-w-lg"
+          wide === "xl" ? "sm:max-w-4xl" : wide ? "sm:max-w-2xl" : "sm:max-w-lg"
         }`}
       >
         <div className="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
