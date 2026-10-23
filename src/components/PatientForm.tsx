@@ -6,6 +6,7 @@ import { useDraft } from "@/lib/useDraft";
 import type { Patient } from "@/lib/types";
 import Modal from "./Modal";
 import ErrorText from "./ErrorText";
+import DateInput from "./DateInput";
 import DraftNotice from "./DraftNotice";
 
 export default function PatientForm({
@@ -96,7 +97,7 @@ export default function PatientForm({
           </div>
           <div>
             <label className="label">დაბადების თარიღი</label>
-            <input type="date" className="input" value={form.date_of_birth} onChange={set("date_of_birth")} />
+            <DateInput value={form.date_of_birth} onChange={(date_of_birth) => setForm({ ...form, date_of_birth })} />
           </div>
         </div>
         <div>

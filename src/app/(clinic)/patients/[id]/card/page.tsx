@@ -26,6 +26,7 @@ import {
 } from "@/lib/medicalCard";
 import type { Patient, Treatment } from "@/lib/types";
 import ErrorText from "@/components/ErrorText";
+import DateInput from "@/components/DateInput";
 import DraftNotice from "@/components/DraftNotice";
 
 type Loaded = { patient: Patient; card: MedicalCardData; cardNumber: number | null };
@@ -236,7 +237,7 @@ function CardForm({ patientId, patient, card, cardNumber: initialNumber }: Loade
           <div>
             <label className="label">გასინჯვის თარიღი</label>
             <div className="flex gap-2">
-              <input type="date" className="input" {...text("exam_date")} />
+              <DateInput className="flex-1" value={form.exam_date} onChange={(v) => update("exam_date", v)} />
               {!form.exam_date && (
                 <button type="button" className="btn-secondary whitespace-nowrap" onClick={() => update("exam_date", todayISO())}>
                   დღეს
@@ -352,7 +353,7 @@ function CardForm({ patientId, patient, card, cardNumber: initialNumber }: Loade
               );
             return (
               <div key={i} className="grid gap-2 rounded-lg border border-slate-200 p-2 sm:grid-cols-[150px_1fr_180px_auto]">
-                <input type="date" className="input" value={row.date} onChange={(e) => setRow({ date: e.target.value })} />
+                <DateInput value={row.date} onChange={(date) => setRow({ date })} />
                 <textarea
                   rows={1}
                   className="input min-h-[38px]"
@@ -412,7 +413,7 @@ function CardForm({ patientId, patient, card, cardNumber: initialNumber }: Loade
           </div>
           <div>
             <label className="label">თარიღი</label>
-            <input type="date" className="input" {...text("consent_date")} />
+            <DateInput value={form.consent_date} onChange={(v) => update("consent_date", v)} />
           </div>
         </div>
         <p className="text-xs text-slate-500">ხელმოწერები კეთდება დაბეჭდილ ფურცელზე.</p>

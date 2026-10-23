@@ -6,6 +6,7 @@ import { formatPrice, todayISO } from "@/lib/format";
 import type { ExpensePayment } from "@/lib/types";
 import Modal from "./Modal";
 import ErrorText from "./ErrorText";
+import DateInput from "./DateInput";
 
 export default function ExpensePaymentForm({
   supplier,
@@ -56,7 +57,7 @@ export default function ExpensePaymentForm({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">გადახდის თარიღი *</label>
-            <input type="date" required className="input" value={form.date} onChange={set("date")} />
+            <DateInput required value={form.date} onChange={(date) => setForm({ ...form, date })} />
           </div>
           <div>
             <label className="label">თანხა (₾) *</label>

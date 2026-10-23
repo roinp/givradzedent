@@ -7,6 +7,7 @@ import { useDraft } from "@/lib/useDraft";
 import type { Expense } from "@/lib/types";
 import Modal from "./Modal";
 import ErrorText from "./ErrorText";
+import DateInput from "./DateInput";
 import DraftNotice from "./DraftNotice";
 
 export const EXPENSE_CATEGORIES = ["ინვენტარი", "იმპლანტი", "მასალა", "ხელსაწყო", "მედიკამენტი", "სხვა"];
@@ -132,7 +133,7 @@ export default function ExpenseForm({
           </div>
           <div>
             <label className="label">შესყიდვის თარიღი *</label>
-            <input type="date" required className="input" value={form.date} onChange={set("date")} />
+            <DateInput required value={form.date} onChange={(date) => setForm({ ...form, date })} />
           </div>
         </div>
 
@@ -184,12 +185,10 @@ export default function ExpenseForm({
               </div>
               <div>
                 <label className="label text-xs">გადახდის თარიღი</label>
-                <input
-                  type="date"
+                <DateInput
                   required={paidNow > 0}
-                  className="input"
                   value={form.paid_date}
-                  onChange={set("paid_date")}
+                  onChange={(paid_date) => setForm({ ...form, paid_date })}
                 />
               </div>
             </div>

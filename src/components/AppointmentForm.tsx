@@ -8,6 +8,7 @@ import { useDraft } from "@/lib/useDraft";
 import type { Appointment, Patient } from "@/lib/types";
 import Modal from "./Modal";
 import ErrorText from "./ErrorText";
+import DateInput from "./DateInput";
 import DraftNotice from "./DraftNotice";
 import TimeSlotPicker from "./TimeSlotPicker";
 import PatientForm from "./PatientForm";
@@ -273,7 +274,7 @@ export default function AppointmentForm({
           </div>
           <div className="sm:col-span-2">
             <label className="label">თარიღი *</label>
-            <input type="date" required className="input" value={form.date} onChange={set("date")} />
+            <DateInput required value={form.date} onChange={(date) => setForm({ ...form, date })} />
           </div>
           <div>
             <label className="label">დრო *</label>

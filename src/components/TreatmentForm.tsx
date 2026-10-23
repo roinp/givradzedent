@@ -8,6 +8,7 @@ import { useDraft } from "@/lib/useDraft";
 import type { Treatment } from "@/lib/types";
 import Modal from "./Modal";
 import ErrorText from "./ErrorText";
+import DateInput from "./DateInput";
 import DraftNotice from "./DraftNotice";
 import { PAYMENT_METHODS } from "./PatientPaymentForm";
 
@@ -97,7 +98,7 @@ export default function TreatmentForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="label">თარიღი *</label>
-            <input type="date" required className="input" value={form.date} onChange={set("date")} />
+            <DateInput required value={form.date} onChange={(date) => setForm({ ...form, date })} />
           </div>
           <div>
             <label className="label">ექიმი</label>
@@ -171,7 +172,7 @@ export default function TreatmentForm({
               <>
                 <div>
                   <label className="label text-xs">გადახდის თარიღი</label>
-                  <input type="date" required className="input" value={form.paid_date} onChange={set("paid_date")} />
+                  <DateInput required value={form.paid_date} onChange={(paid_date) => setForm({ ...form, paid_date })} />
                 </div>
                 <div className="col-span-2">
                   <label className="label text-xs">გადახდის ფორმა</label>

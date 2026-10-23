@@ -16,6 +16,7 @@ import {
 } from "@/lib/quote";
 import { printHtml } from "@/lib/print";
 import Modal from "./Modal";
+import DateInput from "./DateInput";
 import ErrorText from "./ErrorText";
 
 type SavedCalc = {
@@ -541,15 +542,10 @@ function LabRow({
           {index + 1}
         </span>
         <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-[150px_1fr_1fr]">
-          <label className="block">
+          <div>
             <span className={field}>📅 თარიღი</span>
-            <input
-              type="date"
-              className="input mt-1"
-              value={r.date ?? ""}
-              onChange={(e) => onChange({ date: e.target.value })}
-            />
-          </label>
+            <DateInput className="mt-1" value={r.date ?? ""} onChange={(date) => onChange({ date })} />
+          </div>
           <label className="block">
             <span className={field}>პაციენტის სახელი, გვარი</span>
             <input

@@ -6,6 +6,7 @@ import { formatDateShort, formatPrice, todayISO } from "@/lib/format";
 import type { PatientPayment, Treatment } from "@/lib/types";
 import Modal from "./Modal";
 import ErrorText from "./ErrorText";
+import DateInput from "./DateInput";
 
 export const PAYMENT_METHODS = ["ნაღდი", "ბარათი", "გადმორიცხვა"];
 
@@ -107,7 +108,7 @@ export default function PatientPaymentForm({
         <div className="grid gap-3 sm:grid-cols-3">
           <div>
             <label className="label">გადახდის თარიღი *</label>
-            <input type="date" required className="input" value={form.date} onChange={set("date")} />
+            <DateInput required value={form.date} onChange={(date) => setForm({ ...form, date })} />
           </div>
           <div>
             <label className="label">თანხა (₾) *</label>
