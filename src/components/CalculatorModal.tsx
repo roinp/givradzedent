@@ -22,6 +22,8 @@ import ErrorText from "./ErrorText";
 type SavedCalc = {
   id: string;
   patient_name: string | null;
+  /** Lab orders only: the lab the work is sent to. */
+  lab_name?: string | null;
   discount: number;
   rows: Row[];
   total: number;
@@ -31,6 +33,7 @@ type SavedCalc = {
 const blank = () => ({
   savedId: "",
   patient: "",
+  lab: "",
   discount: "",
   rows: [emptyRow()],
 });
@@ -48,6 +51,7 @@ const KINDS = {
     emptySaved: "შენახული კალკულაციები ჯერ არ არის",
     itemPlaceholder: "მკურნალობა",
     rowPatient: false,
+    columns: "id, patient_name, discount, rows, total, updated_at",
     print: undefined as QuoteLabels | undefined,
   },
   lab: {
@@ -61,6 +65,7 @@ const KINDS = {
     emptySaved: "შენახული ჩანაწერები ჯერ არ არის",
     itemPlaceholder: "სამუშაო",
     rowPatient: true,
+    columns: "id, patient_name, lab_name, discount, rows, total, updated_at",
     print: {
       title: "ლაბორატორიული სამუშაოების ხარჯთაღრიცხვა",
       itemHeader: "სამუშაო / მომსახურება",
@@ -83,6 +88,7 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
   const [view, setView] = useState<"edit" | "saved">("edit");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [patientNames, setPatientNames] = useState<string[]>([]);
+  const [labNames, setLabNames] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedJson, setSavedJson] = useState<string | null>(null);
@@ -100,7 +106,15 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
       .order("last_name")
       .limit(2000)
       .then(({ data }) => setPatientNames((data ?? []).map((p) => `${p.first_name} ${p.last_name}`)));
-  }, []);
+    if (k.rowPatient) {
+      supabase
+        .from("lab_calculations")
+        .select("lab_name")
+        .not("lab_name", "is", null)
+        .limit(1000)
+        .then(({ data }) => setLabNames([...new Set((data ?? []).map((r) => r.lab_name.trim()))].sort()));
+    }
+  }, [k.rowPatient]);
 
   const setRow = (i: number, patch: Partial<Row>) =>
     setValue({
@@ -124,6 +138,7 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
     const payload = {
       // Lab orders keep the patient on each row; the list of names makes history searchable.
       patient_name: (k.rowPatient ? rowPatients(quote.rows) : quote.patient) || null,
+      ...(k.rowPatient && { lab_name: (value.lab ?? "").trim() || null }),
       discount: quote.percent,
       rows: quote.rows,
       total: quote.total,
@@ -143,6 +158,7 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
     const next = {
       savedId: c.id,
       patient: c.patient_name ?? "",
+      lab: c.lab_name ?? "",
       discount: c.discount ? String(c.discount) : "",
       rows: c.rows.length ? c.rows : [emptyRow()],
     };
@@ -235,6 +251,24 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
             <option key={s} value={s} />
           ))}
         </datalist>
+
+        {k.rowPatient && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <label className="label">🧪 ლაბორატორიის სახელი</label>
+            <input
+              className="input"
+              list="lab-names"
+              placeholder="სადაც იგზავნება სამუშაო"
+              value={value.lab ?? ""}
+              onChange={(e) => setValue({ ...value, lab: e.target.value })}
+            />
+            <datalist id="lab-names">
+              {labNames.map((n) => (
+                <option key={n} value={n} />
+              ))}
+            </datalist>
+          </div>
+        )}
 
         <div>
           {k.rowPatient ? (
@@ -372,7 +406,7 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
             type="button"
             className="btn-primary"
             disabled={quote.rows.length === 0}
-            onClick={() => printQuote(quote, k.print)}
+            onClick={() => printQuote(quote, printLabels(k.print, value.lab))}
           >
             🖨 ბეჭდვა
           </button>
@@ -404,12 +438,12 @@ function SavedList({
   useEffect(() => {
     supabase
       .from(k.table)
-      .select("id, patient_name, discount, rows, total, updated_at")
+      .select(k.columns)
       .order("updated_at", { ascending: false })
       .limit(300)
       .then(({ data, error }) => {
         if (error) return setError(`${error.message} — გაუშვით ${k.sql} Supabase-ში.`);
-        setItems(data ?? []);
+        setItems((data ?? []) as unknown as SavedCalc[]);
       });
   }, [k]);
 
@@ -426,6 +460,7 @@ function SavedList({
     (c) =>
       !q ||
       (c.patient_name ?? "").toLowerCase().includes(q) ||
+      (c.lab_name ?? "").toLowerCase().includes(q) ||
       c.rows.some((r) => (r.patient ?? "").toLowerCase().includes(q)),
   );
 
@@ -454,7 +489,9 @@ function SavedList({
             className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 ${c.id === currentId ? "bg-teal-50" : ""}`}
           >
             <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onOpen(c)}>
-              <p className="truncate font-medium">{k.rowPatient ? "პაციენტების სია" : c.patient_name || "უსახელო"}</p>
+              <p className="truncate font-medium">
+                {k.rowPatient ? c.lab_name || "პაციენტების სია" : c.patient_name || "უსახელო"}
+              </p>
               <p className="text-xs text-slate-500">
                 {formatDateShort(c.updated_at.slice(0, 10))} · {c.rows.length} პოზიცია
                 {c.discount > 0 && ` · −${Number(c.discount)}%`}
@@ -482,7 +519,9 @@ function SavedList({
                 <button
                   className="btn-secondary px-2.5 py-1"
                   title="ბეჭდვა"
-                  onClick={() => printQuote(computeQuote(c.patient_name ?? "", c.discount, c.rows), k.print)}
+                  onClick={() =>
+                    printQuote(computeQuote(c.patient_name ?? "", c.discount, c.rows), printLabels(k.print, c.lab_name))
+                  }
                 >
                   🖨
                 </button>
@@ -664,6 +703,12 @@ function rowPatients(rows: Row[]) {
 }
 
 /** Prints the estimate through a hidden iframe (no new tab). */
+/** A lab printout is headed by the lab's name when one is given. */
+function printLabels(labels: QuoteLabels | undefined, labName?: string | null) {
+  const name = labName?.trim();
+  return labels && name ? { ...labels, title: name } : labels;
+}
+
 function printQuote(q: Quote, labels?: QuoteLabels) {
   printHtml(buildQuoteHtml(q, labels));
 }

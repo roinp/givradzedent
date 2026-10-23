@@ -18,4 +18,8 @@ drop policy if exists "staff all lab_calculations" on public.lab_calculations;
 create policy "staff all lab_calculations" on public.lab_calculations
   for all to authenticated using (true) with check (true);
 
+
+-- ლაბორატორიის სახელი (იბეჭდება სათაურად)
+alter table public.lab_calculations add column if not exists lab_name text;
+
 notify pgrst, 'reload schema';
