@@ -8,6 +8,7 @@ import {
   buildQuoteHtml,
   computeQuote,
   emptyRow,
+  groupLabRows,
   rowPaid,
   rowTotal,
   type Quote,
@@ -123,6 +124,27 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
     });
   const newRow = (): Row => (k.rowPatient ? { ...emptyRow(), date: todayISO() } : emptyRow());
   const addRow = () => setValue({ ...value, rows: [...value.rows, newRow()] });
+  // Lab orders: a patient can have several work items. They stay flat rows (for totals and printing);
+  // rows marked `sub` belong to the card of the row above and share its patient and date.
+  const groups = labGroups(value.rows);
+  const setShared = (g: Group, patch: Partial<Row>) =>
+    setValue({ ...value, rows: value.rows.map((r, j) => (j >= g.start && j < g.end ? { ...r, ...patch } : r)) });
+  const addItem = (g: Group) => {
+    const { date, patient } = value.rows[g.start];
+    const rows = [...value.rows];
+    rows.splice(g.end, 0, { ...emptyRow(), date, patient, sub: true });
+    setValue({ ...value, rows });
+  };
+  const removeItem = (i: number) => {
+    const rows = value.rows.filter((_, j) => j !== i);
+    // Removing a card's first item makes the next one its head.
+    if (!value.rows[i].sub && rows[i]?.sub) rows[i] = { ...rows[i], sub: false };
+    setValue({ ...value, rows: rows.length ? rows : [newRow()] });
+  };
+  const removeGroup = (g: Group) => {
+    const rows = value.rows.filter((_, j) => j < g.start || j >= g.end);
+    setValue({ ...value, rows: rows.length ? rows : [newRow()] });
+  };
   const removeRow = (i: number) =>
     setValue({
       ...value,
@@ -160,7 +182,7 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
       patient: c.patient_name ?? "",
       lab: c.lab_name ?? "",
       discount: c.discount ? String(c.discount) : "",
-      rows: c.rows.length ? c.rows : [emptyRow()],
+      rows: c.rows.length ? (k.rowPatient ? groupLabRows(c.rows) : c.rows) : [emptyRow()],
     };
     setValue(next);
     setSavedJson(JSON.stringify(next));
@@ -273,15 +295,18 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
         <div>
           {k.rowPatient ? (
             <div className="space-y-3">
-              {value.rows.map((r, i) => (
-                <LabRow
-                  key={i}
-                  index={i}
-                  row={r}
+              {groups.map((g, gi) => (
+                <LabCard
+                  key={gi}
+                  index={gi}
+                  rows={value.rows.slice(g.start, g.end)}
                   itemPlaceholder={k.itemPlaceholder}
-                  onChange={(patch) => setRow(i, patch)}
-                  onRemove={() => removeRow(i)}
-                  onEnter={i === value.rows.length - 1 ? addRow : undefined}
+                  onShared={(patch) => setShared(g, patch)}
+                  onItem={(j, patch) => setRow(g.start + j, patch)}
+                  onAddItem={() => addItem(g)}
+                  onRemoveItem={(j) => removeItem(g.start + j)}
+                  onRemove={() => removeGroup(g)}
+                  onEnter={g.end === value.rows.length ? addRow : undefined}
                 />
               ))}
             </div>
@@ -350,7 +375,7 @@ export default function CalculatorModal({ onClose, kind = "calc" }: { onClose: (
             </>
           )}
           <button type="button" className="btn-secondary mt-3" onClick={addRow}>
-            + რიგის დამატება
+            {k.rowPatient ? "+ პაციენტის დამატება" : "+ რიგის დამატება"}
           </button>
         </div>
 
@@ -520,7 +545,10 @@ function SavedList({
                   className="btn-secondary px-2.5 py-1"
                   title="ბეჭდვა"
                   onClick={() =>
-                    printQuote(computeQuote(c.patient_name ?? "", c.discount, c.rows), printLabels(k.print, c.lab_name))
+                    printQuote(
+                      computeQuote(c.patient_name ?? "", c.discount, k.rowPatient ? groupLabRows(c.rows) : c.rows),
+                      printLabels(k.print, c.lab_name),
+                    )
                   }
                 >
                   🖨
@@ -541,49 +569,51 @@ function SavedList({
   );
 }
 
-/** One lab order line as a card: date, patient and work on top, the money below. */
-function LabRow({
+/** One patient's lab order as a card: date and patient on top, then each work item with its own money fields. */
+function LabCard({
   index,
-  row: r,
+  rows,
   itemPlaceholder,
-  onChange,
+  onShared,
+  onItem,
+  onAddItem,
+  onRemoveItem,
   onRemove,
   onEnter,
 }: {
   index: number;
-  row: Row;
+  rows: Row[];
   itemPlaceholder: string;
-  onChange: (patch: Partial<Row>) => void;
+  /** Date and patient belong to the whole card. */
+  onShared: (patch: Pick<Row, "date"> | Pick<Row, "patient">) => void;
+  onItem: (item: number, patch: Partial<Row>) => void;
+  onAddItem: () => void;
+  onRemoveItem: (item: number) => void;
   onRemove: () => void;
   onEnter?: () => void;
 }) {
-  const total = rowTotal(r);
-  const left = Math.round((total - rowPaid(r)) * 100) / 100;
+  const head = rows[0];
+  const total = rows.reduce((s, r) => s + rowTotal(r), 0);
+  const paid = rows.reduce((s, r) => s + rowPaid(r), 0);
   const status =
     total <= 0
       ? "border-slate-200"
-      : left <= 0
+      : Math.round((total - paid) * 100) <= 0
         ? "border-emerald-300 bg-emerald-50/40"
-        : rowPaid(r) > 0
+        : paid > 0
           ? "border-amber-300 bg-amber-50/40"
           : "border-slate-200";
   const field = "text-[11px] font-medium uppercase tracking-wide text-slate-500";
-  const enterAdds = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && onEnter) {
-      e.preventDefault();
-      onEnter();
-    }
-  };
   return (
     <div className={`rounded-xl border p-3 shadow-sm ${status}`}>
       <div className="flex items-start gap-3">
         <span className="mt-6 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-100 text-xs font-semibold text-teal-700">
           {index + 1}
         </span>
-        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-[150px_1fr_1fr]">
+        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-[150px_1fr]">
           <div>
             <span className={field}>📅 თარიღი</span>
-            <DateInput className="mt-1" value={r.date ?? ""} onChange={(date) => onChange({ date })} />
+            <DateInput className="mt-1" value={head.date ?? ""} onChange={(date) => onShared({ date })} />
           </div>
           <label className="block">
             <span className={field}>პაციენტის სახელი, გვარი</span>
@@ -591,18 +621,8 @@ function LabRow({
               className="input mt-1"
               list="calc-patients"
               placeholder="სახელი, გვარი"
-              value={r.patient ?? ""}
-              onChange={(e) => onChange({ patient: e.target.value })}
-            />
-          </label>
-          <label className="block">
-            <span className={field}>დასახელება</span>
-            <input
-              className="input mt-1"
-              list="calc-treatments"
-              placeholder={itemPlaceholder}
-              value={r.name}
-              onChange={(e) => onChange({ name: e.target.value })}
+              value={head.patient ?? ""}
+              onChange={(e) => onShared({ patient: e.target.value })}
             />
           </label>
         </div>
@@ -610,82 +630,160 @@ function LabRow({
           type="button"
           onClick={onRemove}
           className="mt-6 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-          title="წაშლა"
+          title={rows.length > 1 ? "პაციენტის წაშლა ყველა დასახელებით" : "წაშლა"}
         >
           ✕
         </button>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 sm:ml-10 sm:mr-10 sm:grid-cols-5">
-        <label className="block">
-          <span className={field}>რაოდენობა</span>
-          <input
-            type="number"
-            min="0"
-            step="any"
-            className="input mt-1 tabular-nums"
-            placeholder="1"
-            title="ცარიელი = 1"
-            value={r.qty}
-            onChange={(e) => onChange({ qty: e.target.value })}
-          />
-        </label>
-        <label className="block">
-          <span className={field}>ფასი (₾)</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            className="input mt-1 tabular-nums"
-            placeholder="0.00"
-            value={r.price}
-            onChange={(e) => onChange({ price: e.target.value })}
-          />
-        </label>
-        <label className="block">
-          <span className={field}>ფასდაკლება</span>
-          <div className="relative mt-1">
-            <input
-              type="number"
-              min="0"
-              max="100"
-              step="any"
-              className="input pr-7 tabular-nums"
-              placeholder="0"
-              value={r.discount ?? ""}
-              onChange={(e) => onChange({ discount: e.target.value })}
-            />
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-slate-400">
-              %
+
+      <div className="mt-3 space-y-3 sm:ml-10 sm:mr-10">
+        {rows.map((r, j) => {
+          const rTotal = rowTotal(r);
+          const left = Math.round((rTotal - rowPaid(r)) * 100) / 100;
+          return (
+            <div key={j} className="rounded-lg border border-slate-200 bg-white/70 p-3">
+              <div className="flex items-end gap-2">
+                <label className="block min-w-0 flex-1">
+                  <span className={field}>დასახელება{rows.length > 1 && ` ${j + 1}`}</span>
+                  <input
+                    className="input mt-1"
+                    list="calc-treatments"
+                    placeholder={itemPlaceholder}
+                    value={r.name}
+                    onChange={(e) => onItem(j, { name: e.target.value })}
+                  />
+                </label>
+                {rows.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveItem(j)}
+                    className="mb-1 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                    title="დასახელების წაშლა"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-[1fr_1fr_1fr_1fr_150px_1fr]">
+                <label className="block">
+                  <span className={field}>რაოდენობა</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className="input mt-1 tabular-nums"
+                    placeholder="1"
+                    title="ცარიელი = 1"
+                    value={r.qty}
+                    onChange={(e) => onItem(j, { qty: e.target.value })}
+                  />
+                </label>
+                <label className="block">
+                  <span className={field}>ფასი (₾)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="input mt-1 tabular-nums"
+                    placeholder="0.00"
+                    value={r.price}
+                    onChange={(e) => onItem(j, { price: e.target.value })}
+                  />
+                </label>
+                <label className="block">
+                  <span className={field}>ფასდაკლება</span>
+                  <div className="relative mt-1">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="any"
+                      className="input pr-7 tabular-nums"
+                      placeholder="0"
+                      value={r.discount ?? ""}
+                      onChange={(e) => onItem(j, { discount: e.target.value })}
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-slate-400">
+                      %
+                    </span>
+                  </div>
+                </label>
+                <label className="block">
+                  <span className={field}>გადახდილი (₾)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="input mt-1 tabular-nums"
+                    placeholder="0.00"
+                    value={r.paid ?? ""}
+                    onChange={(e) => {
+                      const paid = e.target.value;
+                      // The payment date defaults to today once an amount is entered, and goes away with it.
+                      onItem(j, { paid, paidDate: paid.trim() ? r.paidDate || todayISO() : "" });
+                    }}
+                    onKeyDown={(e) => {
+                      // Enter in the very last paid field starts the next patient.
+                      if (e.key === "Enter" && onEnter && j === rows.length - 1) {
+                        e.preventDefault();
+                        onEnter();
+                      }
+                    }}
+                  />
+                </label>
+                <div>
+                  <span className={field}>გადახდის თარიღი</span>
+                  <DateInput
+                    className="mt-1"
+                    value={r.paidDate ?? ""}
+                    onChange={(paidDate) => onItem(j, { paidDate })}
+                  />
+                </div>
+                <div>
+                  <span className={field}>ჯამი</span>
+                  <div className="mt-1 rounded-lg bg-slate-100 px-3 py-2 text-right font-semibold tabular-nums">
+                    {formatPrice(rTotal)}
+                  </div>
+                  {rTotal > 0 && (
+                    <p className={`mt-1 text-right text-xs ${left > 0 ? "text-red-600" : "text-emerald-700"}`}>
+                      {left > 0 ? `დარჩ. ${formatPrice(left)}` : "✓ გადახდილია"}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            className="rounded-lg border border-dashed border-teal-300 px-3 py-1.5 text-sm font-medium text-teal-700 hover:bg-teal-50"
+            onClick={onAddItem}
+          >
+            + დასახელების დამატება
+          </button>
+          {rows.length > 1 && (
+            <span className="text-sm text-slate-500">
+              პაციენტის ჯამი: <b className="tabular-nums text-slate-800">{formatPrice(total)}</b>
             </span>
-          </div>
-        </label>
-        <label className="block">
-          <span className={field}>გადახდილი (₾)</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            className="input mt-1 tabular-nums"
-            placeholder="0.00"
-            value={r.paid ?? ""}
-            onChange={(e) => onChange({ paid: e.target.value })}
-            onKeyDown={enterAdds}
-          />
-        </label>
-        <div className="col-span-2 sm:col-span-1">
-          <span className={field}>ჯამი</span>
-          <div className="mt-1 rounded-lg bg-slate-100 px-3 py-2 text-right font-semibold tabular-nums">
-            {formatPrice(total)}
-          </div>
-          {total > 0 && (
-            <p className={`mt-1 text-right text-xs ${left > 0 ? "text-red-600" : "text-emerald-700"}`}>
-              {left > 0 ? `დარჩ. ${formatPrice(left)}` : "✓ გადახდილია"}
-            </p>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+type Group = { start: number; end: number };
+
+/** Splits lab rows into cards: a `sub` row continues the card of the row above. */
+function labGroups(rows: Row[]) {
+  const groups: Group[] = [];
+  rows.forEach((r, i) => {
+    const last = groups[groups.length - 1];
+    if (r.sub && last) last.end = i + 1;
+    else groups.push({ start: i, end: i + 1 });
+  });
+  return groups;
 }
 
 function RemainingBadge({ calc }: { calc: SavedCalc }) {

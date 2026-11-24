@@ -2,7 +2,7 @@ import { CLINIC_BRAND } from "@/lib/medicalCard";
 import { escapeHtml } from "@/lib/print";
 import { formatDateShort } from "@/lib/format";
 
-/** `date` (YYYY-MM-DD), `patient`, `discount` (%) and `paid` are only used by lab orders, where each row belongs to its own patient. */
+/** `date` and `paidDate` (YYYY-MM-DD), `patient`, `discount` (%) and `paid` are only used by lab orders, where each row belongs to its own patient. */
 export type Row = {
   name: string;
   qty: string;
@@ -11,9 +11,31 @@ export type Row = {
   patient?: string;
   discount?: string;
   paid?: string;
+  paidDate?: string;
+  /** Lab orders: another work item of the patient in the row above. */
+  sub?: boolean;
 };
 
 export const emptyRow = (): Row => ({ name: "", qty: "", price: "" });
+
+/**
+ * Lab orders saved before patients could have several work items kept one row per item.
+ * Gathers rows of the same patient and date into one card (the first row, then `sub` rows).
+ * Rows that are already grouped are returned as they are.
+ */
+export function groupLabRows(rows: Row[]): Row[] {
+  if (rows.some((r) => r.sub)) return rows;
+  const cards = new Map<string, Row[]>();
+  rows.forEach((r, i) => {
+    const patient = r.patient?.trim().toLowerCase();
+    // Rows without a patient can't be matched to anyone and stay on their own.
+    const key = patient ? `${patient}|${r.date ?? ""}` : `#${i}`;
+    const card = cards.get(key);
+    if (card) card.push({ ...r, sub: true });
+    else cards.set(key, [r]);
+  });
+  return [...cards.values()].flat();
+}
 
 /** Empty quantity counts as 1. */
 export const qtyOf = (r: Row) => (r.qty.trim() === "" ? 1 : Number(r.qty) || 0);
@@ -58,19 +80,24 @@ export function buildQuoteHtml(q: Quote, labels: QuoteLabels = DEFAULT_LABELS) {
   const today = new Date();
   const date = `${String(today.getDate()).padStart(2, "0")}.${String(today.getMonth() + 1).padStart(2, "0")}.${today.getFullYear()}`;
   const rows = q.rows
-    .map(
-      (r, i) => `<tr>
+    .map((r, i) => {
+      // A patient's work items share one date cell and one name cell, merged down the rows and centred.
+      const sub = r.sub && i > 0;
+      let span = 1;
+      while (!sub && q.rows[i + span]?.sub) span++;
+      const merged = `class="c m" rowspan="${span}"`;
+      return `<tr>
         <td class="c">${i + 1}</td>
-        ${labels.dateColumn ? `<td class="c">${r.date ? formatDateShort(r.date) : "—"}</td>` : ""}
-        ${labels.patientColumn ? `<td>${escapeHtml(r.patient?.trim() || "—")}</td>` : ""}
+        ${labels.dateColumn && !sub ? `<td ${merged}>${r.date ? formatDateShort(r.date) : "—"}</td>` : ""}
+        ${labels.patientColumn && !sub ? `<td ${merged}>${escapeHtml(r.patient?.trim() || "—")}</td>` : ""}
         <td>${escapeHtml(r.name || "—")}</td>
         <td class="c">${qtyOf(r)}</td>
         <td class="r">${money(Number(r.price) || 0)}</td>
         ${labels.discountColumn ? `<td class="c">${rowPercent(r) ? `${rowPercent(r)}%` : "—"}</td>` : ""}
         <td class="r">${money(rowTotal(r))}</td>
-        ${labels.paidColumn ? `<td class="r">${money(rowPaid(r))}</td>` : ""}
-      </tr>`,
-    )
+        ${labels.paidColumn ? `<td class="r">${money(rowPaid(r))}${r.paidDate && rowPaid(r) ? `<div class="sub">${formatDateShort(r.paidDate)}</div>` : ""}</td>` : ""}
+      </tr>`;
+    })
     .join("");
 
   return `<!doctype html><html lang="ka"><head><meta charset="utf-8"><title>${escapeHtml(labels.title)}</title>
@@ -85,7 +112,7 @@ export function buildQuoteHtml(q: Quote, labels: QuoteLabels = DEFAULT_LABELS) {
   table { width: 100%; border-collapse: collapse; }
   th, td { border: 1px solid #999; padding: 5pt 7pt; vertical-align: top; }
   th { background: #f1f5f9; font-weight: bold; text-align: left; }
-  .c { text-align: center; } .r { text-align: right; white-space: nowrap; }
+  .c { text-align: center; } .m { vertical-align: middle; } .r { text-align: right; white-space: nowrap; }
   .totals { margin: 12pt 0 0 auto; width: 55%; }
   .totals td { border: none; padding: 3pt 7pt; }
   .totals .disc td { color: #b91c1c; }
@@ -118,7 +145,15 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Totals for a calculation; rows without a name or price are left out. */
 export function computeQuote(patient: string, discount: string | number, rows: Row[]): Quote {
-  const used = rows.filter((r) => r.name.trim() || r.patient?.trim() || Number(r.price) || rowPaid(r));
+  const used: Row[] = [];
+  let cardKept = false;
+  for (const r of rows) {
+    if (!r.sub) cardKept = false;
+    if (!(r.name.trim() || r.patient?.trim() || Number(r.price) || rowPaid(r))) continue;
+    // If a card's first row is left out, its next row takes over as the head.
+    used.push(r.sub && !cardKept ? { ...r, sub: false } : r);
+    cardKept = true;
+  }
   // Subtotal is before any discount; per-row discounts come first, then the overall %.
   const subtotal = round2(used.reduce((s, r) => s + rowGross(r), 0));
   const afterRows = round2(used.reduce((s, r) => s + rowTotal(r), 0));
